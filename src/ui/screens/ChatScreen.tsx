@@ -129,6 +129,13 @@ import ConversationSearch, {
   type MessageHit,
 } from '../overlays/ConversationSearch.js';
 import { useTerminalWidth } from '../hooks/useTerminalWidth.js';
+// LOCALE-APPLY-SECTION — `t()` for ChatScreen-owned banners, hints, and
+// the empty-state copy. ChatScreen already receives `locale` via props
+// (forwarded to ThinkingSpinner), but for re-renderable surface strings
+// we go through the React context so a live `/language` switch flips
+// every label without re-mounting.
+import { useT } from '../../i18n/index.js';
+// LOCALE-APPLY-SECTION-END
 import { dimSeparator, noxPalette, textMuted } from '../theme.js';
 import type { Todo } from '../../sessions/session-manager.js';
 import type {
@@ -1152,6 +1159,13 @@ function ChatScreen({
   proactivePanelVisible = true,
   // PROACTIVE-MOUNT-SECTION-END
 }: ChatScreenProps): React.JSX.Element {
+  // LOCALE-APPLY-SECTION — surface strings come from the active locale
+  // via `useT()`. Re-renders automatically when the parent's
+  // `LocaleProvider` value flips, so `/language ru` updates the empty-
+  // state hint and queue banners without unmounting ChatScreen.
+  const { t } = useT();
+  // LOCALE-APPLY-SECTION-END
+
   // OUTPUT-FILTER-SECTION — start
   // Resolved filter snapshot — when no prop passed, default to "all
   // categories visible" (legacy behaviour for any caller / test that
@@ -1752,7 +1766,7 @@ function ChatScreen({
       // answer y/n first. We surface a transient toast so the keypress
       // isn't silently dropped.
       if (pendingApproval !== null) {
-        showQueueToast('Answer the approval prompt first');
+        showQueueToast(t('chat.toast.answerApprovalFirst'));
         // Keep the draft so the user can retry after answering.
         return;
       }
@@ -1769,7 +1783,7 @@ function ChatScreen({
         // local mirror. The host (`app.tsx`) translates this into a
         // `chatDispatch({ type: 'ENQUEUE_PENDING', text: payload })`.
         if (onEnqueuePending !== undefined) onEnqueuePending(payload);
-        showQueueToast('Queued — will send after current turn');
+        showQueueToast(t('chat.toast.queued'));
         setDraft('');
         bumpResetTrigger();
         return;
@@ -2790,9 +2804,9 @@ function ChatScreen({
 
             {messages.length === 0 && !isStreaming && pendingApproval === null && (
               <Box paddingX={1} marginTop={1}>
-                <Text color={textMuted}>
-                  Start by typing a message or `/` for commands. Press Esc while generating to cancel.
-                </Text>
+                {/* LOCALE-APPLY-SECTION */}
+                <Text color={textMuted}>{t('chat.emptyHint')}</Text>
+                {/* LOCALE-APPLY-SECTION-END */}
               </Box>
             )}
 
@@ -2905,22 +2919,28 @@ function ChatScreen({
             lastTurnError !== undefined &&
             pendingQueue.length > 0 && (
               <Box paddingX={1}>
+                {/* LOCALE-APPLY-SECTION */}
                 <Text color={noxPalette.yellow}>
-                  Queue paused — last turn failed. Retry the failed message or send a new one to resume. (Ctrl+R retry · Ctrl+X discard)
+                  {t('chat.queuePausedBanner')}
                 </Text>
+                {/* LOCALE-APPLY-SECTION-END */}
               </Box>
             )}
 
           {pendingQueue.length > 0 && (
             <Box paddingX={1}>
+              {/* LOCALE-APPLY-SECTION — keyed plural variants so Russian
+                  can use the locale-correct form (1 сообщение / N
+                  сообщений) without ad-hoc plural rules at the call site. */}
               <Text color={textMuted} dimColor>
-                {`↳ ${pendingQueue.length} ${
-                  pendingQueue.length === 1 ? 'message' : 'messages'
-                } queued (will send after this turn)`}
+                {pendingQueue.length === 1
+                  ? t('chat.queueCountOne')
+                  : t('chat.queueCountMany', { n: pendingQueue.length })}
                 {nextQueuedPreview !== null && pendingQueue.length === 1 && (
                   <Text color={textMuted} dimColor>{` — ${nextQueuedPreview}`}</Text>
                 )}
               </Text>
+              {/* LOCALE-APPLY-SECTION-END */}
             </Box>
           )}
 
@@ -2964,9 +2984,11 @@ function ChatScreen({
               open) so F still toggles back out. */}
           {readingMode ? (
             <Box paddingX={1}>
+              {/* LOCALE-APPLY-SECTION */}
               <Text color={noxPalette.yellow} dimColor>
-                READING MODE — press F to exit
+                {t('chat.readingMode')}
               </Text>
+              {/* LOCALE-APPLY-SECTION-END */}
             </Box>
           ) : (
             <>
@@ -3005,11 +3027,13 @@ function ChatScreen({
                     // entirely while an overlay is up).
                     disabled={pendingApproval !== null}
                     placeholder={
+                      // LOCALE-APPLY-SECTION
                       pendingApproval !== null
-                        ? 'Type to queue — first respond to the prompt above (y/n)…'
+                        ? t('chat.placeholderApproval')
                         : isStreaming
-                          ? 'Type to queue your next message — Esc cancels the stream…'
+                          ? t('chat.placeholderStreaming')
                           : undefined
+                      // LOCALE-APPLY-SECTION-END
                     }
                   />
                 </Box>
@@ -3061,11 +3085,14 @@ function ChatScreen({
                   are wired via the dispatcher above. */}
               {snippetSelectActive && (
                 <Box paddingX={1}>
+                  {/* LOCALE-APPLY-SECTION */}
                   <Text color={noxPalette.yellow} dimColor>
-                    {`SELECT MODE — ↑/↓ pick · Y yank · Esc exit (row ${
-                      selectionCursor + 1
-                    }/${messages.length})`}
+                    {t('chat.selectMode', {
+                      row: selectionCursor + 1,
+                      total: messages.length,
+                    })}
                   </Text>
+                  {/* LOCALE-APPLY-SECTION-END */}
                 </Box>
               )}
 
@@ -3074,9 +3101,11 @@ function ChatScreen({
                   between Ctrl+M and the overlay opening). */}
               {modelSwapActive && (
                 <Box paddingX={1}>
+                  {/* LOCALE-APPLY-SECTION */}
                   <Text color={noxPalette.yellow} dimColor>
-                    MODEL SWAP — opening picker…
+                    {t('chat.modelSwap')}
                   </Text>
+                  {/* LOCALE-APPLY-SECTION-END */}
                 </Box>
               )}
 

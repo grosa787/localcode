@@ -1,0 +1,173 @@
+name: Packages (deb/rpm)
+
+# Builds .deb and .rpm packages from the prebuilt binaries published by the
+# upstream release workflow (release.yml — separate concern), then uploads them
+# as assets to the same GitHub Release.
+#
+# Trigger:
+#   - on `v*` tag push (after release.yml has finished uploading its tarballs)
+#   - manual via workflow_dispatch (for re-running against an existing release)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach packages to (e.g. v0.20.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.format }} for ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [deb, rpm]
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          set -eu
+          if [ -n "${{ inputs.tag || '' }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          case "$TAG" in
+            v*) VERSION="${TAG#v}" ;;
+            *)  VERSION="$TAG" ;;
+          esac
+          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          # nfpm uses Debian-style arch names; map matrix.arch -> tar asset arch.
+          case "${{ matrix.arch }}" in
+            amd64) BIN_ARCH=x64 ;;
+            arm64) BIN_ARCH=arm64 ;;
+            *) echo "unknown arch ${{ matrix.arch }}"; exit 1 ;;
+          esac
+          echo "bin_arch=$BIN_ARCH" >>"$GITHUB_OUTPUT"
+
+      - name: Download release tarball
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${{ steps.meta.outputs.tag }}"
+          BIN_ARCH="${{ steps.meta.outputs.bin_arch }}"
+          ASSET="localcode-linux-${BIN_ARCH}.tar.gz"
+          mkdir -p artifact
+          echo "Fetching $ASSET from release $TAG"
+          gh release download "$TAG" --pattern "$ASSET" --dir artifact
+          # Optional sha256 sidecar, if present in the release.
+          gh release download "$TAG" --pattern "${ASSET}.sha256" --dir artifact || true
+          ls -la artifact/
+
+      - name: Verify checksum (if present)
+        run: |
+          set -eu
+          BIN_ARCH="${{ steps.meta.outputs.bin_arch }}"
+          ASSET="localcode-linux-${BIN_ARCH}.tar.gz"
+          cd artifact
+          if [ -f "${ASSET}.sha256" ]; then
+            sha256sum -c "${ASSET}.sha256"
+          else
+            echo "::warning::No .sha256 sidecar found for $ASSET — proceeding without verification."
+          fi
+
+      - name: Extract binary
+        id: extract
+        run: |
+          set -eu
+          BIN_ARCH="${{ steps.meta.outputs.bin_arch }}"
+          ASSET="localcode-linux-${BIN_ARCH}.tar.gz"
+          mkdir -p staging
+          tar -xzf "artifact/$ASSET" -C staging
+          # Locate the binary regardless of internal layout.
+          BIN_PATH="$(find staging -type f -name localcode -perm -u+x -print -quit || true)"
+          if [ -z "$BIN_PATH" ]; then
+            BIN_PATH="$(find staging -type f -name localcode -print -quit)"
+          fi
+          if [ -z "$BIN_PATH" ]; then
+            echo "::error::could not find 'localcode' binary inside $ASSET"
+            exit 1
+          fi
+          chmod +x "$BIN_PATH"
+          ABS="$(realpath "$BIN_PATH")"
+          echo "bin=$ABS" >>"$GITHUB_OUTPUT"
+          echo "Resolved binary: $ABS"
+
+      - name: Install nfpm
+        run: |
+          set -eu
+          NFPM_VERSION="2.39.0"
+          curl -fsSL -o /tmp/nfpm.deb \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_amd64.deb"
+          sudo dpkg -i /tmp/nfpm.deb
+          nfpm --version
+
+      - name: Build package
+        env:
+          PKG_VERSION: ${{ steps.meta.outputs.version }}
+          PKG_ARCH: ${{ matrix.arch }}
+          PKG_BIN: ${{ steps.extract.outputs.bin }}
+        run: |
+          set -eu
+          mkdir -p out
+          nfpm package \
+            --config packaging/nfpm.yaml \
+            --packager "${{ matrix.format }}" \
+            --target "out/"
+          ls -la out/
+
+      - name: Compute package SHA-256
+        id: sums
+        run: |
+          set -eu
+          cd out
+          for f in *.deb *.rpm; do
+            [ -f "$f" ] || continue
+            sha256sum "$f" >"${f}.sha256"
+          done
+          ls -la
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${{ steps.meta.outputs.tag }}"
+          shopt -s nullglob
+          assets=()
+          for f in out/*.deb out/*.rpm out/*.sha256; do
+            assets+=("$f")
+          done
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "::error::no package artifacts produced"
+            exit 1
+          fi
+          echo "Uploading: ${assets[*]}"
+          gh release upload "$TAG" "${assets[@]}" --clobber
+
+      - name: Upload workflow artifact (debug aid)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: localcode-${{ matrix.format }}-${{ matrix.arch }}
+          path: out/*
+          if-no-files-found: warn
+          retention-days: 14

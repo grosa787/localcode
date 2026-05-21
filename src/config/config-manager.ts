@@ -49,6 +49,10 @@ import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import { z, type ZodError } from 'zod';
 import { ConfigSchema, type Config, type DeepPartial } from './types';
 import type { GenerationConfig } from '@/types/global';
+// PROJECT-RC-SECTION — `.localcoderc.toml` loader, walks the dir tree
+// upward and deep-merges allowed overrides on top of the global config.
+import { loadProjectRc, deepMergePartial } from './project-rc';
+// PROJECT-RC-SECTION-END
 
 // ---------- Errors ----------
 
@@ -519,6 +523,42 @@ export class ConfigManager {
       // ignore
     }
   }
+
+  // PROJECT-RC-SECTION
+  /**
+   * Read the global config and overlay any `.localcoderc.toml` overrides
+   * discovered by walking upward from `projectRoot`. Only fields on the
+   * `ALLOWED_PATHS` safelist in `project-rc.ts` are honoured — broader
+   * overrides are silently dropped so a project's `.localcoderc.toml`
+   * cannot, for example, swap the user's backend baseUrl invisibly.
+   *
+   * Same error contract as `read()` — surfaces `ConfigReadError` /
+   * `ConfigValidationError` from the global path. RC parse failures are
+   * swallowed (logged to stderr) so a broken `.localcoderc.toml` never
+   * blocks startup; the global config is used as-is in that case.
+   *
+   * On a clean run (no RC files found anywhere) this returns the exact
+   * same Config object as `read()` would.
+   */
+  readForProject(projectRoot: string): Config {
+    const base = this.read();
+    const rc = loadProjectRc(projectRoot);
+    if (Object.keys(rc).length === 0) return base;
+    const merged = deepMergePartial(base as DeepPartial<Config>, rc);
+    // Revalidate after merge — the safelist already constrains the
+    // shape, but Zod is the canonical contract for downstream consumers.
+    // On validation failure (e.g. an out-of-range enum value in the RC)
+    // we fall back to the global config rather than blocking startup.
+    const validation = ConfigSchema.safeParse(merged);
+    if (!validation.success) {
+      process.stderr.write(
+        `localcode: .localcoderc.toml ignored — merged config failed validation: ${describeIssues(validation.error)}\n`,
+      );
+      return base;
+    }
+    return validation.data;
+  }
+  // PROJECT-RC-SECTION-END
 
   // ---------- Per-project settings.json (FIX #35) ----------
 

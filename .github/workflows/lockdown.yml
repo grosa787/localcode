@@ -1,0 +1,115 @@
+name: Source lockdown
+
+# After migration, the public repo is a distribution shell only — no
+# source code. This workflow runs on every push + PR to main and FAILS
+# the build if anything resembling source code leaks back in.
+#
+# What "source code" means here (allow-listed exceptions in parentheses):
+#   - Any *.ts / *.tsx file (except packages/npm/scripts/, website/src/)
+#   - src/ directory (forbidden entirely)
+#   - tests/ directory (forbidden entirely)
+#   - web-frontend/src/ (forbidden — render-only site lives in website/)
+#   - bun.lock at the root (forbidden — package-lock at the root signals a
+#     buildable source tree)
+#   - tsconfig.json at the root (forbidden)
+#   - bunfig.toml at the root (forbidden)
+#
+# If you legitimately need a new TS/TSX file in an allow-listed location,
+# add the new prefix to the ALLOW_PREFIXES list below.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  no-source-leaked:
+    name: No source files leaked
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject forbidden directories at the root
+        shell: bash
+        run: |
+          set -eu
+          fail=0
+          for forbidden in src tests web-frontend/src web-frontend/tests; do
+            if [ -d "$forbidden" ]; then
+              echo "::error file=$forbidden::Forbidden directory '$forbidden' present in public repo. Source must live in the private repo."
+              fail=1
+            fi
+          done
+          for forbidden_file in bun.lock bunfig.toml tsconfig.json AGENTS_LOG.md FIXES_PLAN.md ROADMAP.md LOCALCODE_MASTER_PROMPT.md CLAUDE.md docs/ARCHITECTURE.md; do
+            if [ -e "$forbidden_file" ]; then
+              echo "::error file=$forbidden_file::Forbidden file '$forbidden_file' present in public repo."
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "No forbidden directories or files found."
+
+      - name: Reject TS/TSX outside allow-list
+        shell: bash
+        run: |
+          set -eu
+          # Allow-listed directories (paths starting with any of these are OK):
+          ALLOW_PREFIXES=(
+            "packages/npm/scripts/"
+            "website/src/"
+          )
+          # Find all tracked .ts / .tsx files.
+          violations=()
+          while IFS= read -r f; do
+            allowed=0
+            for prefix in "${ALLOW_PREFIXES[@]}"; do
+              case "$f" in
+                "$prefix"*) allowed=1; break ;;
+              esac
+            done
+            if [ "$allowed" -ne 1 ]; then
+              violations+=("$f")
+            fi
+          done < <(git ls-files '*.ts' '*.tsx')
+
+          if [ "${#violations[@]}" -gt 0 ]; then
+            for f in "${violations[@]}"; do
+              echo "::error file=$f::TypeScript file outside allow-listed prefixes. Source belongs in the private repo."
+            done
+            echo ""
+            echo "Allow-listed prefixes:"
+            for p in "${ALLOW_PREFIXES[@]}"; do
+              echo "  - $p"
+            done
+            echo ""
+            echo "If you need a new allowed location, add the prefix to ALLOW_PREFIXES in .github/workflows/lockdown.yml."
+            exit 1
+          fi
+          echo "All .ts/.tsx files are within allow-listed locations."
+
+      - name: Reject node_modules / dist commits
+        shell: bash
+        run: |
+          set -eu
+          fail=0
+          for forbidden in node_modules dist dist-web web-frontend/node_modules website/node_modules website/dist; do
+            if git ls-files --error-unmatch "$forbidden/" >/dev/null 2>&1; then
+              echo "::error::Forbidden tracked path '$forbidden' — should be gitignored, not committed."
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "No build artefacts tracked."
+
+  install-script-syntax:
+    name: install.sh syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n install.sh

@@ -1,0 +1,390 @@
+name: Release
+
+# Produces the upstream native release artifacts that everything else consumes:
+#   - localcode-{darwin,linux}-{x64,arm64}.tar.gz   (Bun-compiled standalone binary)
+#   - <asset>.tar.gz.sha256                          (per-asset sidecar)
+#   - SHA256SUMS                                     (aggregated, one line per asset)
+#   - sbom.cyclonedx.json                            (CycloneDX SBOM via cdxgen)
+#
+# Downstream:
+#   - install.sh reads SHA256SUMS to verify the tarball it downloads.
+#   - packages/npm/scripts/install-binary.js reads <asset>.tar.gz.sha256.
+#   - .github/workflows/packages.yml downloads localcode-linux-<arch>.tar.gz to
+#     build deb/rpm packages.
+#
+# Trigger: tag push matching `v*` (e.g. v0.20.0).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to (re)build assets for (e.g. v0.20.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  # Pinned Bun version — bump deliberately. Reproducible-builds doc must match.
+  BUN_VERSION: '1.3.11'
+  # SOURCE_DATE_EPOCH for tar/zip headers. Each job overrides it from the tag's
+  # commit timestamp so two runs of the same tag produce identical tarballs.
+  SOURCE_DATE_EPOCH_FALLBACK: '0'
+
+jobs:
+  # ----------------------------------------------------------------------
+  # build: compile a standalone native binary on each target platform and
+  # package it into the canonical localcode-<os>-<arch>.tar.gz layout.
+  # ----------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.os_id }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-13,         os_id: darwin, arch: x64,   bun_target: bun-darwin-x64 }
+          - { runner: macos-14,         os_id: darwin, arch: arm64, bun_target: bun-darwin-arm64 }
+          - { runner: ubuntu-22.04,     os_id: linux,  arch: x64,   bun_target: bun-linux-x64 }
+          - { runner: ubuntu-22.04-arm, os_id: linux,  arch: arm64, bun_target: bun-linux-arm64 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag and version
+        id: meta
+        shell: bash
+        run: |
+          set -eu
+          if [ -n "${{ inputs.tag || '' }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          case "$TAG" in
+            v*) VERSION="${TAG#v}" ;;
+            *)  VERSION="$TAG" ;;
+          esac
+          # SOURCE_DATE_EPOCH = commit timestamp of the tag (UTC, deterministic).
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            EPOCH="$(git log -1 --format=%ct "$TAG")"
+          else
+            EPOCH="$SOURCE_DATE_EPOCH_FALLBACK"
+          fi
+          echo "tag=$TAG"         >>"$GITHUB_OUTPUT"
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          echo "epoch=$EPOCH"     >>"$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG version=$VERSION epoch=$EPOCH"
+
+      - name: Setup Bun ${{ env.BUN_VERSION }}
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies (frozen)
+        run: bun install --frozen-lockfile
+
+      - name: Build web bundle + embed into source
+        run: bun run build:web && bun run embed-web
+
+      - name: Compile native binary
+        shell: bash
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.meta.outputs.epoch }}
+        run: |
+          set -eu
+          mkdir -p out-bin
+          # `bun build --compile` produces a standalone executable that bundles
+          # the Bun runtime + our JS. --target=bun-<os>-<arch> cross-compiles by
+          # downloading the matching Bun runtime; using the native target on the
+          # native runner avoids that download.
+          bun build src/cli.tsx \
+            --compile \
+            --target=${{ matrix.bun_target }} \
+            --external playwright \
+            --external playwright-core \
+            --external chromium-bidi \
+            --external electron \
+            --outfile out-bin/localcode
+          file out-bin/localcode || true
+          chmod +x out-bin/localcode
+
+      - name: Smoke test binary (native arch only)
+        if: matrix.bun_target == format('bun-{0}-{1}', matrix.os_id, matrix.arch == 'x64' && 'x64' || 'arm64') && !(matrix.os_id == 'linux' && matrix.arch == 'arm64' && runner.arch != 'ARM64')
+        shell: bash
+        run: |
+          set -eu
+          ./out-bin/localcode --version || true
+          ./out-bin/localcode --help    | head -5 || true
+
+      - name: Package tarball
+        shell: bash
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.meta.outputs.epoch }}
+        run: |
+          set -eu
+          chmod +x scripts/package-release.sh
+          mkdir -p dist-release
+          scripts/package-release.sh \
+            --bin "$(pwd)/out-bin/localcode" \
+            --os "${{ matrix.os_id }}" \
+            --arch "${{ matrix.arch }}" \
+            --out "$(pwd)/dist-release" \
+            --version "${{ steps.meta.outputs.version }}"
+          ls -la dist-release/
+
+      - name: Upload per-platform artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: localcode-${{ matrix.os_id }}-${{ matrix.arch }}
+          path: |
+            dist-release/localcode-${{ matrix.os_id }}-${{ matrix.arch }}.tar.gz
+            dist-release/localcode-${{ matrix.os_id }}-${{ matrix.arch }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  # ----------------------------------------------------------------------
+  # sbom: generate a single CycloneDX SBOM from the source repo (deps tree).
+  # Decoupled from `build` so we only generate one SBOM per release.
+  # ----------------------------------------------------------------------
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun ${{ env.BUN_VERSION }}
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies (frozen)
+        run: bun install --frozen-lockfile
+
+      - name: Setup Node (for cdxgen)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate CycloneDX SBOM via cdxgen
+        run: |
+          set -eu
+          # cdxgen is the de-facto generator for Bun/Node projects.
+          # -t bun forces the Bun lockfile parser. Outputs CycloneDX 1.5 JSON.
+          npx --yes @cyclonedx/cdxgen@^11 -t bun -o sbom.cyclonedx.json --spec-version 1.5 .
+          ls -la sbom.cyclonedx.json
+          head -c 400 sbom.cyclonedx.json || true
+          echo ""
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cyclonedx.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # ----------------------------------------------------------------------
+  # release: gather all per-platform tarballs + SBOM, compute SHA256SUMS,
+  # generate a changelog since the previous tag, create the GitHub Release.
+  # ----------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-22.04
+    needs: [build, sbom]
+    steps:
+      - name: Checkout (for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: meta
+        shell: bash
+        run: |
+          set -eu
+          if [ -n "${{ inputs.tag || '' }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+          PREV="$(git tag --sort=-creatordate | grep -v "^${TAG}\$" | head -n1 || true)"
+          echo "prev=$PREV" >>"$GITHUB_OUTPUT"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble release directory
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p release
+          # Flatten artifacts/<name>/<files> -> release/<files>
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.tar.gz.sha256' -o -name 'sbom.cyclonedx.json' \) \
+            -exec cp {} release/ \;
+          ls -la release/
+
+      # DELTA-PATCH-STEP ------------------------------------------------
+      # Compute a tiny binary delta between the PREVIOUS release's tarball
+      # and the current release's tarball for each os/arch. The patch is
+      # consumed at runtime by `src/updater/patcher.ts` (`bspatch`) when a
+      # user with the previous version upgrades — the on-disk download
+      # shrinks from ~13 MB to a few hundred KB. Missing prev tarballs or
+      # bsdiff failures are non-fatal: the updater silently falls back to
+      # the full tarball when no patch is published. Naming MUST match
+      # `findDeltaPatchAsset` in `src/updater/downloader.ts`:
+      #   localcode-<os>-<arch>-from-<prev>-to-<new>.patch
+      - name: Install bsdiff
+        if: steps.meta.outputs.prev != ''
+        shell: bash
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y bsdiff
+          bsdiff 2>&1 | head -1 || true
+      - name: Build delta patches between ${{ steps.meta.outputs.prev }} and ${{ steps.meta.outputs.tag }}
+        if: steps.meta.outputs.prev != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREV_TAG: ${{ steps.meta.outputs.prev }}
+          CUR_TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -eu
+          PREV_VERSION="${PREV_TAG#v}"
+          CUR_VERSION="${CUR_TAG#v}"
+          mkdir -p prev-bin work
+          # Try to pull each previous-release tarball; missing platforms
+          # mean no delta is published for that platform (the runtime
+          # falls back to the full tarball).
+          for triple in darwin-x64 darwin-arm64 linux-x64 linux-arm64; do
+            asset="localcode-${triple}.tar.gz"
+            if gh release download "$PREV_TAG" --repo "$GITHUB_REPOSITORY" -p "$asset" -D prev-bin --skip-existing 2>/dev/null; then
+              echo "Downloaded prev/$asset"
+            else
+              echo "No prev asset for $triple — skipping delta"
+              continue
+            fi
+            # Extract the prev + current tarballs so bsdiff diffs the
+            # actual binaries (the .tar.gz wrappers themselves are not
+            # stable inputs because of compression metadata).
+            rm -rf "work/prev-$triple" "work/cur-$triple"
+            mkdir -p "work/prev-$triple" "work/cur-$triple"
+            tar -xzf "prev-bin/$asset"     -C "work/prev-$triple"
+            tar -xzf "release/$asset"      -C "work/cur-$triple"
+            prev_bin="$(find "work/prev-$triple" -maxdepth 3 -type f -name 'localcode' | head -1 || true)"
+            cur_bin="$(find  "work/cur-$triple"  -maxdepth 3 -type f -name 'localcode' | head -1 || true)"
+            if [ -z "$prev_bin" ] || [ -z "$cur_bin" ]; then
+              echo "Could not locate localcode binaries inside extracted tarballs for $triple — skipping"
+              continue
+            fi
+            patch_name="localcode-${triple}-from-${PREV_VERSION}-to-${CUR_VERSION}.patch"
+            bsdiff "$prev_bin" "$cur_bin" "release/$patch_name"
+            echo "Built release/$patch_name ($(stat -c%s "release/$patch_name") bytes)"
+          done
+          # If we built no patches at all, that's fine — the release goes
+          # out without any delta assets and every user downloads the
+          # full tarball.
+          ls -la release/ | grep '\.patch$' || echo "(no delta patches built)"
+      # DELTA-PATCH-STEP-END --------------------------------------------
+
+      - name: Compute SHA256SUMS
+        shell: bash
+        run: |
+          set -eu
+          cd release
+          # One canonical aggregate file. `sha256sum -c SHA256SUMS` verifies all.
+          # Skip per-asset sidecars from the aggregate; they remain for the npm shim.
+          # Include any *.patch delta assets we built above so users can
+          # verify the patches the runtime updater downloads.
+          patch_args=""
+          if compgen -G "localcode-*.patch" >/dev/null; then
+            patch_args="$(ls localcode-*.patch)"
+          fi
+          sha256sum localcode-*.tar.gz sbom.cyclonedx.json $patch_args > SHA256SUMS
+          echo "--- SHA256SUMS ---"
+          cat SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        run: |
+          set -eu
+          TAG="${{ steps.meta.outputs.tag }}"
+          PREV="${{ steps.meta.outputs.prev }}"
+          {
+            echo "## LocalCode ${TAG}"
+            echo ""
+            if [ -n "$PREV" ]; then
+              echo "Changes since [${PREV}](https://github.com/${{ github.repository }}/releases/tag/${PREV}):"
+              echo ""
+              git log --no-merges --pretty=format:'- %s (%h)' "${PREV}..${TAG}" || true
+            else
+              echo "Initial tagged release."
+            fi
+            echo ""
+            echo ""
+            echo "## Assets"
+            echo ""
+            echo "| File | SHA-256 |"
+            echo "| --- | --- |"
+            while IFS=' ' read -r hash file; do
+              file="${file# *}"
+              echo "| \`${file}\` | \`${hash}\` |"
+            done < release/SHA256SUMS
+            echo ""
+            echo "## Verifying"
+            echo ""
+            echo '```sh'
+            echo "curl -fsSLO https://github.com/${{ github.repository }}/releases/download/${TAG}/SHA256SUMS"
+            echo "curl -fsSLO https://github.com/${{ github.repository }}/releases/download/${TAG}/localcode-linux-x64.tar.gz"
+            echo "sha256sum --check --ignore-missing SHA256SUMS"
+            echo '```'
+          } > release/CHANGELOG.md
+          {
+            echo 'body<<__EOF__'
+            cat release/CHANGELOG.md
+            echo '__EOF__'
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release with assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: LocalCode ${{ steps.meta.outputs.tag }}
+          body: ${{ steps.changelog.outputs.body }}
+          # `fail_on_unmatched_files` is intentionally false because the
+          # `localcode-*-from-*-to-*.patch` glob may match zero files for
+          # the very first release (no previous tag) or when bsdiff fails
+          # for every platform. The mandatory tarballs + sidecars are
+          # explicit entries below and will still fail loudly if missing.
+          fail_on_unmatched_files: false
+          files: |
+            release/localcode-darwin-x64.tar.gz
+            release/localcode-darwin-x64.tar.gz.sha256
+            release/localcode-darwin-arm64.tar.gz
+            release/localcode-darwin-arm64.tar.gz.sha256
+            release/localcode-linux-x64.tar.gz
+            release/localcode-linux-x64.tar.gz.sha256
+            release/localcode-linux-arm64.tar.gz
+            release/localcode-linux-arm64.tar.gz.sha256
+            release/SHA256SUMS
+            release/sbom.cyclonedx.json
+            release/localcode-*-from-*-to-*.patch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

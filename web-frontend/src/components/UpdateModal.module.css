@@ -1,0 +1,129 @@
+/**
+ * UpdateModal — styling for the VS-Code-style update dialog.
+ * Consumes the token surface defined in `theme/tokens.css`.
+ */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4, 16px);
+  color: var(--text-primary, #e5e5e5);
+}
+
+.intro {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--text-secondary, #b5b5b5);
+}
+
+.notes {
+  background: var(--bg-elev-1, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.07));
+  border-radius: var(--r-md, 8px);
+  padding: var(--sp-4, 16px);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.notes h1,
+.notes h2,
+.notes h3,
+.notes h4 {
+  margin: var(--sp-3, 12px) 0 var(--sp-2, 8px);
+  font-weight: 600;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.notes h2 {
+  font-size: 1.05rem;
+}
+
+.notes h3 {
+  font-size: 0.95rem;
+}
+
+.notes ul {
+  margin: var(--sp-2, 8px) 0;
+  padding-left: var(--sp-4, 18px);
+}
+
+.notes li {
+  margin-bottom: 4px;
+}
+
+.notes p {
+  margin: var(--sp-2, 8px) 0;
+}
+
+.notes code {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 0.85rem;
+  background: var(--bg-elev-2, rgba(255, 255, 255, 0.07));
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, #888);
+}
+
+.link {
+  color: var(--accent, #4eb1ff);
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 12px);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.ghost,
+.primary {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 8px 14px;
+  border-radius: var(--r-sm, 6px);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text-secondary, #c5c5c5);
+  border-color: var(--border-subtle, rgba(255, 255, 255, 0.12));
+}
+
+.ghost:hover {
+  background: var(--bg-elev-2, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary, #f0f0f0);
+}
+
+.primary {
+  background: var(--accent, #2f81f7);
+  color: var(--text-on-accent, #ffffff);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.primary:hover {
+  background: var(--accent-hover, #4291ff);
+}
+
+.primary:focus-visible,
+.ghost:focus-visible {
+  outline: 2px solid var(--accent, #4eb1ff);
+  outline-offset: 2px;
+}

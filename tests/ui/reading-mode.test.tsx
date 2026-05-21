@@ -49,8 +49,13 @@ describe('ChatScreen reading-mode UI guards', () => {
     expect(screen).toContain('READING-MODE-SECTION');
   });
 
-  test('Banner renders "READING MODE — press F to exit"', () => {
-    expect(screen).toContain('READING MODE — press F to exit');
+  test('Banner renders the reading-mode strap via the i18n table', () => {
+    // LOCALE-APPLY-SECTION — the literal English string moved into
+    // `src/i18n/strings/en.ts`. ChatScreen now calls `t('chat.readingMode')`
+    // inside the readingMode branch, so we assert on the key invocation
+    // and leave the actual copy verification to the i18n unit tests.
+    expect(screen).toContain("t('chat.readingMode')");
+    // LOCALE-APPLY-SECTION-END
   });
 
   test('readingMode branch suppresses InputBar', () => {

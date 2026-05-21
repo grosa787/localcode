@@ -191,6 +191,25 @@ export { createLanguageCommand } from '@/commands/cmd-language';
 export type { LanguageDeps } from '@/commands/cmd-language';
 // LANGUAGE-CMD-SECTION-END
 
+// SITE-CMD-SECTION — `/site` opens the landing page in the default browser.
+export { createSiteCommand } from '@/commands/cmd-site';
+// SITE-CMD-SECTION-END
+
+// WEB-CMD-SECTION — `/web` (and `/web stop`) — boot the local web UI
+// from the TUI and continue the same session in the browser.
+export { createWebCommand } from '@/commands/cmd-web';
+export type { WebCommandDeps, LaunchedWeb } from '@/commands/cmd-web';
+// WEB-CMD-SECTION-END
+
+// DEMO-TUTORIAL-CMD-SECTION — `/demo` replays the bundled quick-tour
+// recording inside the active chat session; `/tutorial` re-opens the
+// first-run interactive walkthrough overlay. Both are skippable.
+export { createDemoCommand } from '@/commands/cmd-demo';
+export type { DemoCmdDeps } from '@/commands/cmd-demo';
+export { createTutorialCommand } from '@/commands/cmd-tutorial';
+export type { TutorialDeps } from '@/commands/cmd-tutorial';
+// DEMO-TUTORIAL-CMD-SECTION-END
+
 export type {
   AgentDeps,
   AgentLLM,
@@ -386,6 +405,36 @@ export interface BuiltinCommandFactories {
   /** Alias for `/language`. */
   lang?: SlashCommand;
   // LANGUAGE-CMD-SECTION-END
+  // SITE-CMD-SECTION
+  /**
+   * `/site` — open the LocalCode landing page in the user's default
+   * browser. Pure local action — no LLM round-trip.
+   */
+  site?: SlashCommand;
+  // SITE-CMD-SECTION-END
+  // WEB-CMD-SECTION
+  /**
+   * `/web` — boot the local web UI from inside the TUI and load the
+   * current session in the browser. Optional — wiring is only required
+   * when the host can launch the embedded web server (which the
+   * production composition root in `app.tsx` always can).
+   */
+  web?: SlashCommand;
+  // WEB-CMD-SECTION-END
+  // DEMO-TUTORIAL-CMD-SECTION
+  /**
+   * `/demo` — replay the bundled quick-tour recording inside the chat
+   * log. Optional — wired only when the host can supply a
+   * `Player` instance + dispatch sink.
+   */
+  demo?: SlashCommand;
+  /**
+   * `/tutorial` — re-open the first-run interactive walkthrough
+   * overlay. Optional — wired only when the host owns the overlay
+   * mount point (the TUI composition root in `src/app.tsx`).
+   */
+  tutorial?: SlashCommand;
+  // DEMO-TUTORIAL-CMD-SECTION-END
 }
 
 /**
@@ -464,6 +513,16 @@ export function registerBuiltinCommands(
     factories.language,
     factories.lang,
     // LANGUAGE-CMD-SECTION-END
+    // SITE-CMD-SECTION
+    factories.site,
+    // SITE-CMD-SECTION-END
+    // WEB-CMD-SECTION
+    factories.web,
+    // WEB-CMD-SECTION-END
+    // DEMO-TUTORIAL-CMD-SECTION
+    factories.demo,
+    factories.tutorial,
+    // DEMO-TUTORIAL-CMD-SECTION-END
   ];
   for (const cmd of ordered) {
     if (cmd) registry.register(cmd);

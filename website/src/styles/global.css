@@ -1,0 +1,109 @@
+/* LocalCode marketing site — design tokens + reset.
+ * Dark by default. Lavender/purple accent (#7c3aed / #a855f7).
+ * Distinctive: deliberate use of monospace headings + analogue grid texture,
+ * not the usual rounded-pill "AI startup" look.
+ */
+
+:root {
+  /* dark theme defaults */
+  --bg-0: #07060d;
+  --bg-1: #0c0a17;
+  --bg-2: #14101f;
+  --bg-3: #1a142c;
+  --fg: #ece9f3;
+  --fg-mute: #a59bbf;
+  --fg-dim: #5c5378;
+  --accent: #7c3aed;
+  --accent-2: #a855f7;
+  --accent-soft: rgba(168, 85, 247, 0.16);
+  --border: rgba(168, 85, 247, 0.18);
+  --shadow: 0 14px 60px rgba(124, 58, 237, 0.18);
+  --shadow-strong: 0 24px 80px rgba(124, 58, 237, 0.35);
+  --radius: 14px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
+  --display: "SF Pro Display", -apple-system, BlinkMacSystemFont, Inter, system-ui, sans-serif;
+}
+
+body[data-theme='light'] {
+  --bg-0: #faf6ff;
+  --bg-1: #f3edff;
+  --bg-2: #ebe2fb;
+  --bg-3: #ddcef5;
+  --fg: #1c1431;
+  --fg-mute: #564a73;
+  --fg-dim: #8f82af;
+  --border: rgba(124, 58, 237, 0.22);
+  --accent-soft: rgba(124, 58, 237, 0.1);
+  --shadow: 0 14px 60px rgba(124, 58, 237, 0.12);
+  --shadow-strong: 0 24px 80px rgba(124, 58, 237, 0.22);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--sans);
+  background: var(--bg-0);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Subtle dot grid texture — distinctive, not generic AI gradient soup */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: radial-gradient(rgba(168, 85, 247, 0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+}
+
+body[data-theme='light']::before {
+  background-image: radial-gradient(rgba(124, 58, 237, 0.10) 1px, transparent 1px);
+}
+
+a { color: var(--accent-2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg);
+  padding: 0.65rem 1.1rem;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  transition: background 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+
+button:hover { background: var(--bg-3); }
+button:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+code, pre { font-family: var(--mono); }
+
+h1, h2, h3 { font-family: var(--display); letter-spacing: -0.02em; }
+
+.container { max-width: 1180px; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 2.5rem); }
+
+section { position: relative; z-index: 1; padding: clamp(4rem, 9vh, 9rem) 0; }
+
+/* Respect reduced motion: kill non-essential animation. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Selection — distinctive */
+::selection { background: var(--accent); color: white; }

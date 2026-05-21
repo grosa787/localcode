@@ -14,10 +14,18 @@
  * path through `setScreen('languagePicker')` — see LANGUAGE-CMD-SECTION
  * there. We expose an explicit `openPicker` hook on the command's deps
  * so the command stays decoupled from the React composition root.
+ *
+ * LOCALE-APPLY-SECTION — every print path goes through the i18n `t()`
+ * helper so the response immediately reflects the new locale (the
+ * confirmation line on `/language ru` is rendered in Russian because
+ * `configManager.update` ran BEFORE the print, and `LocaleProvider` in
+ * `app.tsx` pushed the new value into the module-level mirror on the
+ * very next render). LOCALE-APPLY-SECTION-END
  */
 
 import type { ConfigManager } from '@/config/config-manager';
 import { LocaleSchema } from '@/config/types';
+import { t, setActiveLocale } from '@/i18n';
 import type { CommandContext, Locale, SlashCommand } from '@/types/global';
 
 export interface LanguageDeps {
@@ -61,26 +69,33 @@ export function createLanguageCommand(deps: LanguageDeps): SlashCommand {
           openPicker();
           return;
         }
+        // LOCALE-APPLY-SECTION — fall-back print path runs through the
+        // active locale; tests without `openPicker` exercise this branch.
         const label =
-          current === undefined ? '(not set)' : LOCALE_LABELS[current];
-        ctx.print(`Current language: ${label}`);
+          current === undefined
+            ? t('language.notSet')
+            : LOCALE_LABELS[current];
+        ctx.print(t('language.current', { name: label }));
         for (const code of Object.keys(LOCALE_LABELS) as Locale[]) {
           const marker = code === current ? '*' : ' ';
           ctx.print(`  ${marker} ${code} — ${LOCALE_LABELS[code]}`);
         }
-        ctx.print('Switch with `/language <en|ru>`.');
+        ctx.print(t('language.switchHint'));
+        // LOCALE-APPLY-SECTION-END
         return;
       }
 
       if (!isLocale(arg)) {
-        ctx.print(
-          `Unknown language: '${arg}'. Valid options: en, ru.`,
-        );
+        // LOCALE-APPLY-SECTION
+        ctx.print(t('language.unknown', { value: arg }));
+        // LOCALE-APPLY-SECTION-END
         return;
       }
 
       if (arg === current) {
-        ctx.print(`Already on '${LOCALE_LABELS[arg]}'.`);
+        // LOCALE-APPLY-SECTION
+        ctx.print(t('language.alreadyOn', { name: LOCALE_LABELS[arg] }));
+        // LOCALE-APPLY-SECTION-END
         return;
       }
 
@@ -88,11 +103,21 @@ export function createLanguageCommand(deps: LanguageDeps): SlashCommand {
         configManager.update({ locale: arg });
       } catch (cause) {
         const msg = cause instanceof Error ? cause.message : String(cause);
-        ctx.print(`Failed to switch language: ${msg}`);
+        // LOCALE-APPLY-SECTION
+        ctx.print(t('language.failed', { msg }));
+        // LOCALE-APPLY-SECTION-END
         return;
       }
 
-      ctx.print(`Language set to '${LOCALE_LABELS[arg]}'.`);
+      // LOCALE-APPLY-SECTION — push the new locale into the i18n module
+      // mirror immediately so the confirmation print and any subsequent
+      // synchronous slash-command output renders in the freshly-selected
+      // language even before React commits the next paint. The provider
+      // in `app.tsx` will overwrite the same value on its next render —
+      // they converge on the same locale.
+      setActiveLocale(arg);
+      ctx.print(t('language.setTo', { name: LOCALE_LABELS[arg] }));
+      // LOCALE-APPLY-SECTION-END
     },
   };
 }

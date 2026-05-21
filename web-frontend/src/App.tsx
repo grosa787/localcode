@@ -170,11 +170,21 @@ interface InitialTokenInfo {
    * stale-token banner — from a stale-after-restart case.
    */
   hadCachedToken: boolean;
+  // WEB-SESSION-AUTOLOAD-SECTION
+  /**
+   * Session id parsed out of the URL fragment by the TUI's `/web`
+   * command (`#token=…&session=<id>`). Consumed once during bootstrap
+   * — see the `useEffect` block keyed `[autoloadSessionId, sessions]`.
+   */
+  pendingSessionId: string | null;
+  // WEB-SESSION-AUTOLOAD-SECTION-END
 }
 
 /** Pull the CSRF token from `location.hash`, then scrub it from the URL. */
 function readCsrfToken(): InitialTokenInfo {
-  if (typeof window === 'undefined') return { token: null, hadCachedToken: false };
+  if (typeof window === 'undefined') {
+    return { token: null, hadCachedToken: false, pendingSessionId: null };
+  }
   let cached: string | null = null;
   try {
     cached = sessionStorage.getItem(SESSION_STORAGE_TOKEN);
@@ -183,6 +193,48 @@ function readCsrfToken(): InitialTokenInfo {
   }
   const hadCachedToken = cached !== null && cached.length > 0;
   const { hash } = window.location;
+  if (hash.startsWith('#')) {
+    // WEB-SESSION-AUTOLOAD-SECTION
+    // Fragment may be `#token=…`, `#token=…&session=<id>`, or just
+    // `#session=<id>` (the TUI's `/web` command stamps it on every
+    // browser-open). Parse as `&`-separated key/value pairs.
+    const params = new Map<string, string>();
+    for (const part of hash.slice(1).split('&')) {
+      const eqIdx = part.indexOf('=');
+      if (eqIdx === -1) continue;
+      const k = part.slice(0, eqIdx);
+      const v = part.slice(eqIdx + 1);
+      if (k.length > 0) params.set(k, v);
+    }
+    const rawToken = params.get('token') ?? null;
+    const rawSession = params.get('session') ?? null;
+    let pendingSessionId: string | null = null;
+    if (rawSession !== null && rawSession.length > 0) {
+      try {
+        pendingSessionId = decodeURIComponent(rawSession);
+      } catch {
+        pendingSessionId = rawSession;
+      }
+    }
+    let resolvedToken: string | null = null;
+    if (rawToken !== null && rawToken.length > 0) {
+      resolvedToken = rawToken;
+      try {
+        sessionStorage.setItem(SESSION_STORAGE_TOKEN, rawToken);
+      } catch {
+        /* ignored */
+      }
+    } else if (cached !== null && cached.length > 0) {
+      resolvedToken = cached;
+    }
+    if (resolvedToken !== null || pendingSessionId !== null) {
+      const url = window.location.pathname + window.location.search;
+      window.history.replaceState(null, '', url);
+      return { token: resolvedToken, hadCachedToken, pendingSessionId };
+    }
+    // /WEB-SESSION-AUTOLOAD-SECTION
+  }
+  // Back-compat fallback for the legacy single-key form.
   if (hash.startsWith(HASH_TOKEN_PREFIX)) {
     const token = hash.slice(HASH_TOKEN_PREFIX.length);
     if (token.length > 0) {
@@ -193,10 +245,10 @@ function readCsrfToken(): InitialTokenInfo {
       }
       const url = window.location.pathname + window.location.search;
       window.history.replaceState(null, '', url);
-      return { token, hadCachedToken };
+      return { token, hadCachedToken, pendingSessionId: null };
     }
   }
-  return { token: cached, hadCachedToken };
+  return { token: cached, hadCachedToken, pendingSessionId: null };
 }
 
 /** Wipe the cached CSRF token so a fresh URL paste replaces it cleanly. */
@@ -792,6 +844,40 @@ export function App(): JSX.Element {
     clearBrowserState();
     closeBrowserPanel();
   }, [activeSessionId, clearBrowserState, closeBrowserPanel]);
+
+  // WEB-SESSION-AUTOLOAD-SECTION
+  // When the TUI's `/web` slash command opens the SPA it stamps a
+  // `session=<id>` parameter into the URL fragment. Once the sessions
+  // list arrives (via the bootstrap effect above), find the matching
+  // row, switch the active project to its owner, and select it. Runs at
+  // most once per page load — `autoloadConsumed` guards re-entry so a
+  // later sessions refresh doesn't yank the user back to the original
+  // pick.
+  const autoloadConsumed = useRef(false);
+  useEffect(() => {
+    if (autoloadConsumed.current) return;
+    const target = tokenInfo.pendingSessionId;
+    if (target === null || target.length === 0) return;
+    if (sessions.length === 0) return; // wait for bootstrap
+    const match = sessions.find((s) => s.id === target);
+    if (match === undefined) {
+      // Session vanished between TUI launch and browser open; mark
+      // consumed so we don't spin trying to find it.
+      autoloadConsumed.current = true;
+      return;
+    }
+    autoloadConsumed.current = true;
+    setActiveProject(match.projectId);
+    setProjectExpanded(match.projectId, true);
+    setActiveSession(match.id);
+  }, [
+    tokenInfo.pendingSessionId,
+    sessions,
+    setActiveProject,
+    setActiveSession,
+    setProjectExpanded,
+  ]);
+  // WEB-SESSION-AUTOLOAD-SECTION-END
 
   // Multi-subscribe: ensure the WS is subscribed to every known session
   // (across projects). This keeps the run-status indicator live even

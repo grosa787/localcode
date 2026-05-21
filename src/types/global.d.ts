@@ -9,6 +9,7 @@
 // ---------- Screen routing ----------
 
 export type Screen =
+  | 'splash'
   | 'languagePicker'
   | 'onboarding'
   | 'chat'
@@ -348,7 +349,29 @@ export interface AppConfig {
    */
   locale?: Locale;
   // LOCALE-CONFIG-SECTION-END
+  // FIRST-RUN-CONFIG-SECTION
+  /**
+   * First-run UX state. Currently tracks whether the interactive
+   * tutorial overlay has been dismissed. Optional so legacy configs
+   * round-trip cleanly; Zod fills `{ tutorialShown: false }` when the
+   * section is absent. The TutorialOverlay fires whenever
+   * `firstRun?.tutorialShown !== true`.
+   */
+  firstRun?: FirstRunConfig;
+  // FIRST-RUN-CONFIG-SECTION-END
 }
+
+// FIRST-RUN-CONFIG-SECTION
+/**
+ * First-run UX state. Mirrors `FirstRunSchema` in `src/config/types.ts`.
+ *
+ *   - `tutorialShown` — `true` once the tutorial overlay has been
+ *     shown + dismissed (auto-completion OR Esc). Default `false`.
+ */
+export interface FirstRunConfig {
+  tutorialShown: boolean;
+}
+// FIRST-RUN-CONFIG-SECTION-END
 
 // LOCALE-CONFIG-SECTION
 /**
@@ -374,6 +397,16 @@ export interface UpdaterConfig {
   checkIntervalHours: number;
   /** When true, the scheduler downloads the tarball automatically. */
   autoDownload: boolean;
+  /**
+   * Fire an immediate check ~5s after launch in addition to the
+   * recurring interval. Default true.
+   */
+  checkOnLaunch: boolean;
+  /**
+   * When true (default) the background check produces no visible UI
+   * affordance — only the eventual modal trigger fires.
+   */
+  silentBackground: boolean;
 }
 // UPDATER-CONFIG-SECTION-END
 

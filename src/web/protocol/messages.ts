@@ -403,6 +403,34 @@ export type WSServerMessage =
       sessionId: string;
       wakeups: readonly WakeupWire[];
     }
+  // UPDATE-MODAL-WS-SECTION
+  | {
+      /**
+       * Emitted by the web server when its in-process updater singleton
+       * fires `update-available`. Carries the metadata the SPA needs to
+       * render the polished update modal — current + target version,
+       * release URL, and the (possibly truncated) latest body. Delta
+       * release notes are fetched on demand via a separate REST call so
+       * the WS frame stays small.
+       */
+      type: 'update_available';
+      currentVersion: string;
+      latestVersion: string;
+      releaseUrl: string;
+      releaseName: string;
+      body: string;
+      publishedAt: number;
+    }
+  | {
+      /**
+       * Emitted when the staged binary has been written to disk and is
+       * ready for the user to restart. The SPA reflects this in the
+       * modal footer ("Restart to apply").
+       */
+      type: 'update_downloaded';
+      version: string;
+    }
+  // UPDATE-MODAL-WS-SECTION-END
   | { type: 'pong' };
 
 // ---------- Zod schemas (runtime validation) ----------
@@ -725,6 +753,21 @@ export const WSServerMessageSchema: z.ZodType<WSServerMessage> = z.union([
       }),
     ),
   }),
+  // UPDATE-MODAL-WS-SECTION
+  z.object({
+    type: z.literal('update_available'),
+    currentVersion: z.string(),
+    latestVersion: z.string(),
+    releaseUrl: z.string(),
+    releaseName: z.string(),
+    body: z.string(),
+    publishedAt: z.number(),
+  }),
+  z.object({
+    type: z.literal('update_downloaded'),
+    version: z.string(),
+  }),
+  // UPDATE-MODAL-WS-SECTION-END
 ]);
 
 // Schemas for the wire-only sub-shapes. Exported so REST handlers and

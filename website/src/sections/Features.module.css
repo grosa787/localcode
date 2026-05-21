@@ -1,0 +1,36 @@
+.section { }
+
+.heading {
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  letter-spacing: -0.02em;
+  margin: 0 0 2.2rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.iconWrap {
+  display: inline-flex;
+  padding: 0.5rem;
+  background: var(--accent-soft);
+  border-radius: 10px;
+  color: var(--accent-2);
+  margin-bottom: 0.85rem;
+}
+
+.title {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+}
+
+.body {
+  margin: 0;
+  font-size: 0.94rem;
+  color: var(--fg-mute);
+  line-height: 1.5;
+}

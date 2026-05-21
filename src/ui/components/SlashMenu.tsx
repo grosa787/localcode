@@ -28,6 +28,12 @@ import { Box, Text } from 'ink';
 import { theme } from '../theme.js';
 import { useInputModeHandler, type InputEvent } from './InputDispatcher.js';
 import type { SlashCommand } from '../../types/global.js';
+// LOCALE-APPLY-SECTION — empty-state text and scroll hints follow the
+// active locale. The actual command names/descriptions stay in English
+// because `SlashCommand.description` is a developer-facing string from
+// the registry; localising those is out of scope for this pass.
+import { useT } from '../../i18n/index.js';
+// LOCALE-APPLY-SECTION-END
 
 export interface SlashMenuProps {
   readonly query: string;
@@ -83,6 +89,9 @@ export function clampWindow(
 }
 
 function SlashMenu({ query, commands, onSelect, onCancel }: SlashMenuProps): React.JSX.Element | null {
+  // LOCALE-APPLY-SECTION
+  const { t } = useT();
+  // LOCALE-APPLY-SECTION-END
   const filtered = useMemo(() => filterCommands(query, commands), [query, commands]);
   // M6 — reset selection + window during the same render as the filter
   // change, using the React docs "Storing information from previous
@@ -192,7 +201,9 @@ function SlashMenu({ query, commands, onSelect, onCancel }: SlashMenuProps): Rea
   if (filtered.length === 0) {
     return (
       <Box flexDirection="column" paddingX={1}>
-        <Text color="gray">No commands match "{query}"</Text>
+        {/* LOCALE-APPLY-SECTION */}
+        <Text color="gray">{t('slash.noMatch', { query })}</Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
     );
   }
@@ -207,9 +218,11 @@ function SlashMenu({ query, commands, onSelect, onCancel }: SlashMenuProps): Rea
   return (
     <Box flexDirection="column" paddingX={1}>
       {hiddenAbove > 0 && (
+        // LOCALE-APPLY-SECTION
         <Text color="gray" dimColor>
-          ↑ {hiddenAbove} more
+          {t('slash.moreAbove', { n: hiddenAbove })}
         </Text>
+        // LOCALE-APPLY-SECTION-END
       )}
       {visible.map((cmd, i) => {
         const absoluteIndex = start + i;
@@ -229,9 +242,11 @@ function SlashMenu({ query, commands, onSelect, onCancel }: SlashMenuProps): Rea
         );
       })}
       {hiddenBelow > 0 && (
+        // LOCALE-APPLY-SECTION
         <Text color="gray" dimColor>
-          ↓ {hiddenBelow} more
+          {t('slash.moreBelow', { n: hiddenBelow })}
         </Text>
+        // LOCALE-APPLY-SECTION-END
       )}
     </Box>
   );

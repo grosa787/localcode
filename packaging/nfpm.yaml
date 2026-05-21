@@ -1,0 +1,49 @@
+# nfpm config for building LocalCode .deb / .rpm packages.
+# https://nfpm.goreleaser.com/
+#
+# Driven by .github/workflows/packages.yml. Values templated via env vars below
+# (nfpm supports ${VAR} substitution) so the same file produces all arch/format
+# combinations.
+#
+# Required env at pack time:
+#   PKG_VERSION   e.g. 0.20.0  (no leading "v")
+#   PKG_ARCH      one of: amd64, arm64   (Debian-style names; rpm maps internally)
+#   PKG_BIN       absolute path to the prebuilt `localcode` binary to package
+#
+# The binary is the self-contained Bun-bundled CLI from `bun build`. It has no
+# runtime dependency on Bun, Node, libc-specific features, etc. — hence no
+# `depends:` entries. If we ever start linking against system openssl or libstdc++
+# at unusual versions, add explicit depends here.
+
+name: "localcode"
+arch: "${PKG_ARCH}"
+platform: "linux"
+version: "${PKG_VERSION}"
+section: "devel"
+priority: "optional"
+maintainer: "grosa787 <noreply@github.com>"
+description: |
+  LocalCode — local-first AI coding TUI/web app.
+  Talk to Ollama, LM Studio, OpenAI, Anthropic, OpenRouter and Google models
+  from a single Bun-powered CLI with a built-in web UI.
+vendor: "grosa787"
+homepage: "https://github.com/grosa787/localcode"
+license: "MIT"
+
+contents:
+  - src: "${PKG_BIN}"
+    dst: "/usr/bin/localcode"
+    file_info:
+      mode: 0755
+
+# No runtime depends — the bundled binary is self-contained.
+# No conflicts — package name is unique on Debian/Fedora repos.
+
+deb:
+  fields:
+    Bugs: "https://github.com/grosa787/localcode/issues"
+  compression: "xz"
+
+rpm:
+  compression: "xz"
+  summary: "Local-first AI coding TUI/web app"

@@ -188,6 +188,8 @@ export async function runUpdateCli(
             channel: 'stable' as const,
             checkIntervalHours: 6,
             autoDownload: true,
+            checkOnLaunch: true,
+            silentBackground: true,
           };
           manager.update({
             updater: {
@@ -195,6 +197,8 @@ export async function runUpdateCli(
               channel: existing.channel,
               checkIntervalHours: existing.checkIntervalHours,
               autoDownload: existing.autoDownload,
+              checkOnLaunch: existing.checkOnLaunch,
+              silentBackground: existing.silentBackground,
             },
           });
           out(`Auto-update ${enabled ? 'enabled' : 'disabled'}.`);

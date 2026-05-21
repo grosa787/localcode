@@ -1,0 +1,23 @@
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 3rem 0 2.5rem;
+  background: var(--bg-1);
+}
+
+.inner {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 2rem;
+}
+
+.col { display: flex; flex-direction: column; gap: 0.6rem; }
+.col a { color: var(--fg-mute); }
+.col a:hover { color: var(--accent-2); text-decoration: none; }
+.col span { color: var(--fg-dim); font-size: 0.88rem; }
+
+.brand { font-family: var(--mono); font-weight: 600; color: var(--fg); }
+.tagline { color: var(--fg-mute); margin: 0; max-width: 320px; }
+
+@media (max-width: 640px) {
+  .inner { grid-template-columns: 1fr; }
+}

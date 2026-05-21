@@ -929,11 +929,15 @@ export async function startWebApp(
         channel: 'stable' | 'beta';
         checkIntervalHours: number;
         autoDownload: boolean;
+        checkOnLaunch: boolean;
+        silentBackground: boolean;
       } = {
         enabled: true,
         channel: 'stable',
         checkIntervalHours: 6,
         autoDownload: true,
+        checkOnLaunch: true,
+        silentBackground: true,
       };
       try {
         const cfg = configManager.read();
@@ -943,6 +947,8 @@ export async function startWebApp(
             channel: cfg.updater.channel,
             checkIntervalHours: cfg.updater.checkIntervalHours,
             autoDownload: cfg.updater.autoDownload,
+            checkOnLaunch: cfg.updater.checkOnLaunch,
+            silentBackground: cfg.updater.silentBackground,
           };
         }
       } catch {
@@ -959,37 +965,47 @@ export async function startWebApp(
         forceNew: true,
       });
       const unsubscribe = updater.on((event) => {
-        // Surface updates via stderr + an error-frame broadcast. The
-        // SPA toast layer treats `type: 'error'` frames as
-        // notifications when no `sessionId` is attached. Frontend
-        // dedupes by message content.
+        // UPDATE-MODAL-WS-SECTION — broadcast the dedicated update
+        // frames so the SPA can render the polished modal. The old
+        // error-message broadcast is removed: the modal owns the
+        // user-facing affordance, and silent background mode means we
+        // emit nothing else.
         if (event.type === 'update-available') {
-          process.stderr.write(
-            `localcode(web): 📦 Update available: v${event.currentVersion} → v${event.release.version}. Downloading in background…\n`,
-          );
+          if (updaterCfg.silentBackground !== true) {
+            process.stderr.write(
+              `localcode(web): Update available: v${event.currentVersion} → v${event.release.version}\n`,
+            );
+          }
           const recent = sessionManager.listSessions(20);
           for (const s of recent) {
             eventBus.emit(s.id, {
-              type: 'error',
-              sessionId: s.id,
-              message: `📦 Update available: v${event.currentVersion} → v${event.release.version}. Downloading in background…`,
+              type: 'update_available',
+              currentVersion: event.currentVersion,
+              latestVersion: event.release.version,
+              releaseUrl: event.release.htmlUrl,
+              releaseName: event.release.name,
+              body: event.release.body,
+              publishedAt: event.release.publishedAt,
             });
           }
         } else if (event.type === 'update-downloaded') {
-          process.stderr.write(
-            `localcode(web): ✅ Update ready: v${event.version}. Restart LocalCode to apply.\n`,
-          );
+          if (updaterCfg.silentBackground !== true) {
+            process.stderr.write(
+              `localcode(web): Update ready: v${event.version}. Restart LocalCode to apply.\n`,
+            );
+          }
           const recent = sessionManager.listSessions(20);
           for (const s of recent) {
             eventBus.emit(s.id, {
-              type: 'error',
-              sessionId: s.id,
-              message: `✅ Update ready: v${event.version}. Restart LocalCode to apply.`,
+              type: 'update_downloaded',
+              version: event.version,
             });
           }
         }
       });
-      updater.start();
+      if (updaterCfg.checkOnLaunch !== false) {
+        updater.start();
+      }
       updaterCleanup = (): void => {
         try {
           unsubscribe();

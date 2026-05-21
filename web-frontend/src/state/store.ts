@@ -425,6 +425,23 @@ export interface UIToast {
  * Keep the union explicit so the UI can map type → icon + severity
  * statically.
  */
+// UPDATE-MODAL-STORE-SECTION
+/**
+ * Snapshot of the most recent `update_available` WS frame. Mirrors the
+ * `update_available` shape in `src/web/protocol/messages.ts`. Kept as a
+ * narrow interface so the UpdateModal can render without re-resolving
+ * the wire shape.
+ */
+export interface UpdateAvailableInfo {
+  readonly currentVersion: string;
+  readonly latestVersion: string;
+  readonly releaseUrl: string;
+  readonly releaseName: string;
+  readonly body: string;
+  readonly publishedAt: number;
+}
+// UPDATE-MODAL-STORE-SECTION-END
+
 export type NotificationType =
   | 'agent_completed'
   | 'agent_errored'
@@ -704,6 +721,15 @@ export interface AppState {
   tasksPanelAutoOpenedFor: string[];
   // /TODO-WRITE-SECTION
 
+  // UPDATE-MODAL-STORE-SECTION
+  /** Latest update-available payload from the server (null when none). */
+  updateAvailable: UpdateAvailableInfo | null;
+  /** Whether the polished update modal is currently open. */
+  updateModalOpen: boolean;
+  /** Set when the staged binary has finished downloading. */
+  updateDownloadedVersion: string | null;
+  // UPDATE-MODAL-STORE-SECTION-END
+
   // NOTIFICATIONS-SECTION: bell + center state
   /** Append-only event log, capped at NOTIFICATION_CAP via FIFO eviction. */
   notifications: Notification[];
@@ -851,6 +877,14 @@ export interface AppState {
   setSlashCommands: (list: CommandSummary[]) => void;
   openSlashCommands: () => void;
   closeSlashCommands: () => void;
+  // UPDATE-MODAL-STORE-SECTION
+  /** Record an incoming `update_available` payload and open the modal. */
+  setUpdateAvailable: (info: UpdateAvailableInfo) => void;
+  /** Record that the staged binary is ready. */
+  setUpdateDownloaded: (version: string) => void;
+  /** Close the update modal without changing the underlying payload. */
+  closeUpdateModal: () => void;
+  // UPDATE-MODAL-STORE-SECTION-END
   setComposerDraft: (text: string) => void;
   // QUEUE-NEXT-STORE-SECTION — start
   /**
@@ -1387,6 +1421,12 @@ function applySetSessionMessages(
 }
 
 export const useStore = create<AppState>((set) => ({
+  // UPDATE-MODAL-STORE-SECTION: initial state
+  updateAvailable: null,
+  updateModalOpen: false,
+  updateDownloadedVersion: null,
+  // UPDATE-MODAL-STORE-SECTION-END
+
   // NOTIFICATIONS-SECTION: initial state
   notifications: [],
   notificationsOpen: false,
@@ -1804,6 +1844,13 @@ export const useStore = create<AppState>((set) => ({
       activeOverlay:
         st.activeOverlay.kind === 'slash-commands' ? { kind: 'none' } : st.activeOverlay,
     })),
+  // UPDATE-MODAL-STORE-SECTION
+  setUpdateAvailable: (info) =>
+    set({ updateAvailable: info, updateModalOpen: true }),
+  setUpdateDownloaded: (version) =>
+    set({ updateDownloadedVersion: version }),
+  closeUpdateModal: () => set({ updateModalOpen: false }),
+  // UPDATE-MODAL-STORE-SECTION-END
   setComposerDraft: (text) => set({ composerDraft: text }),
   // QUEUE-NEXT-STORE-SECTION — start
   enqueueMessage: (content) => {

@@ -11,8 +11,11 @@
  * process should never crash because of an updater glitch.
  */
 
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
+import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 
 import {
   fetchLatestRelease,
@@ -23,16 +26,27 @@ import {
   downloadTarball,
   getStagingDir,
   pickDownloadTarget,
+  findDeltaPatchAsset,
+  downloadDeltaPatch,
 } from './downloader';
 import {
   applyManifest,
   readPendingManifest,
   writePendingManifest,
+  resolveLiveBinaryPath,
 } from './applier';
+// DELTA-PATCH-SECTION — patcher runner type for test injection.
+import type { BspatchRunner } from './patcher';
+// DELTA-PATCH-SECTION-END
 import {
   scheduleBackgroundCheck,
   type SchedulerHandle,
 } from './scheduler';
+import {
+  fetchReleaseNotesBetween,
+  type DeltaReleaseNotes,
+  type FetchDeltaNotesOptions,
+} from './release-notes';
 import type {
   ReleaseInfo,
   PendingUpdate,
@@ -62,7 +76,20 @@ export {
   pickDownloadTarget,
   getStagingDir,
   getPendingManifestPath,
+  findDeltaPatchAsset,
+  downloadDeltaPatch,
 } from './downloader';
+export type { DeltaPatchAssetMatch, DeltaPatchOptions } from './downloader';
+// DELTA-PATCH-SECTION — patcher re-exports for tests + CLI surface.
+export {
+  applyPatch,
+  isBspatchAvailable,
+  BspatchUnavailableError,
+  BspatchExecutionError,
+  _resetBspatchAvailabilityCache,
+} from './patcher';
+export type { BspatchRunner, BspatchRunResult } from './patcher';
+// DELTA-PATCH-SECTION-END
 export {
   applyStagedUpdate,
   applyManifest,
@@ -72,6 +99,12 @@ export {
   getUpdatesRoot,
 } from './applier';
 export { scheduleBackgroundCheck } from './scheduler';
+export {
+  fetchReleaseNotesBetween,
+  getReleaseNotesCachePath,
+  NOTES_CACHE_TTL_MS,
+} from './release-notes';
+export type { DeltaReleaseNotes, DeltaSegment } from './release-notes';
 
 /**
  * Default GitHub repo. Embedded in the binary; can be overridden via
@@ -101,7 +134,57 @@ export interface UpdaterSingletonOptions {
   /** Inject scheduler timers (tests). */
   readonly setTimeoutFn?: (cb: () => void, ms: number) => unknown;
   readonly clearTimeoutFn?: (handle: unknown) => void;
+  // UPDATE-MODAL-SECTION
+  /**
+   * Override the path used by `skipVersion` to persist the list of
+   * versions the user has chosen to skip. Tests inject a tmp path.
+   * Production callers omit and the default
+   * `~/.localcode/updates/skipped.json` is used.
+   */
+  readonly skipFilePath?: string;
+  // UPDATE-MODAL-SECTION-END
+  // DELTA-PATCH-SECTION
+  /**
+   * Prefer downloading a small `*-from-<prev>-to-<new>.patch` asset and
+   * reconstructing the new binary via `bspatch` when the release
+   * publishes one for the current platform/arch. Default `true`.
+   * Falls back to the full-tarball path on any failure (missing
+   * `bspatch`, missing patch asset, network failure, SHA mismatch).
+   * Mirrors `config.updater.preferPatchDelta`.
+   */
+  readonly preferPatchDelta?: boolean;
+  /**
+   * Override the path to the currently-running binary. Used by tests so
+   * the delta-patch path can apply against a tmp fixture. Production
+   * callers omit and the singleton resolves the path itself.
+   */
+  readonly liveBinaryPathOverride?: string;
+  /**
+   * Inject a `bspatch` runner for tests. Production callers omit and
+   * the default `execa('bspatch', ...)` is used.
+   */
+  readonly bspatchRunner?: BspatchRunner;
+  // DELTA-PATCH-SECTION-END
 }
+
+// UPDATE-MODAL-SECTION
+/**
+ * On-disk shape of the skipped-versions list. Stored at
+ * `~/.localcode/updates/skipped.json` so the next process boot remembers
+ * the user's choice. Versions are kept WITHOUT the leading `v` to match
+ * the rest of the updater module.
+ */
+export const SkippedVersionsSchema = z.object({
+  versions: z.array(z.string().min(1)).default([]),
+});
+
+export type SkippedVersionsFile = z.infer<typeof SkippedVersionsSchema>;
+
+/** Default location for the skipped-versions persistence file. */
+export function getSkippedVersionsPath(): string {
+  return join(homedir(), '.localcode', 'updates', 'skipped.json');
+}
+// UPDATE-MODAL-SECTION-END
 
 /**
  * In-process singleton implementing the update lifecycle.
@@ -121,6 +204,12 @@ export class Updater {
   private lastCheckedAt: number | null = null;
   private lastError: string | null = null;
   private downloadingVersion: string | null = null;
+  // UPDATE-MODAL-SECTION
+  /** In-memory mirror of `skipped.json`. Lazily loaded on first check. */
+  private skippedVersions: Set<string> | null = null;
+  /** Epoch-ms; while now() < dismissUntilMs we don't surface notifications. */
+  private dismissUntilMs = 0;
+  // UPDATE-MODAL-SECTION-END
 
   constructor(opts: UpdaterSingletonOptions) {
     this.opts = opts;
@@ -271,9 +360,20 @@ export class Updater {
     if (!isNewerThan(release.version, this.opts.currentVersion)) {
       return;
     }
+    // UPDATE-MODAL-SECTION
+    // Skipped-version + dismissal gates — both feed the "be silent in
+    // the background" requirement. A skipped version never surfaces; a
+    // dismissed-until window suppresses the notification but still lets
+    // the download proceed.
+    const skipped = await this.getSkippedVersions();
+    if (skipped.has(release.version)) {
+      return;
+    }
+    const isDismissed = nowFn() < this.dismissUntilMs;
+    // UPDATE-MODAL-SECTION-END
     if (this.seenAvailableVersions.has(release.version)) {
       // Already surfaced — keep state but don't re-emit.
-    } else {
+    } else if (!isDismissed) {
       this.seenAvailableVersions.add(release.version);
       this.emit({
         type: 'update-available',
@@ -313,7 +413,46 @@ export class Updater {
       const dest = join(getStagingDir(release.version), 'cli.js');
       const dlOpts: { fetchFn?: typeof globalThis.fetch } = {};
       if (this.opts.fetchFn !== undefined) dlOpts.fetchFn = this.opts.fetchFn;
-      const dl = await downloadTarball(release, dest, dlOpts);
+
+      // DELTA-PATCH-SECTION — try the small patch first when enabled.
+      // Any failure here (missing asset, missing bspatch, hash
+      // mismatch, network) silently falls back to the full-binary
+      // download below; we deliberately don't surface delta failures
+      // as `update-error` because they are a happy degradation path.
+      const wantDelta = this.opts.preferPatchDelta !== false;
+      let dl: { ok: boolean; path?: string; digest?: string | null; error?: string } | null = null;
+      if (wantDelta) {
+        const match = findDeltaPatchAsset(release, this.opts.currentVersion);
+        if (match !== null) {
+          const livePath = this.opts.liveBinaryPathOverride
+            ?? (await resolveLiveBinaryPath());
+          if (livePath !== null) {
+            const patchOpts: {
+              fetchFn?: typeof globalThis.fetch;
+              bspatchRunner?: BspatchRunner;
+            } = {};
+            if (this.opts.fetchFn !== undefined) patchOpts.fetchFn = this.opts.fetchFn;
+            if (this.opts.bspatchRunner !== undefined) {
+              patchOpts.bspatchRunner = this.opts.bspatchRunner;
+            }
+            const tryPatch = await downloadDeltaPatch(
+              release,
+              match,
+              livePath,
+              dest,
+              patchOpts,
+            );
+            if (tryPatch.ok) {
+              dl = tryPatch;
+            }
+            // Non-ok: fall through silently to full-binary download.
+          }
+        }
+      }
+      if (dl === null) {
+        dl = await downloadTarball(release, dest, dlOpts);
+      }
+      // DELTA-PATCH-SECTION-END
       if (!dl.ok || dl.path === undefined) {
         this.lastError = dl.error ?? 'unknown';
         this.emit({
@@ -355,6 +494,107 @@ export class Updater {
       }
     }
   }
+
+  // UPDATE-MODAL-SECTION
+  /**
+   * Persist `version` (stripped of any leading `v`) into the skipped
+   * list. Future `runCheckTick` calls will NOT emit `update-available`
+   * for the matching version. Idempotent — calling twice is a no-op.
+   */
+  async skipVersion(version: string): Promise<void> {
+    const v = version.startsWith('v') || version.startsWith('V')
+      ? version.slice(1)
+      : version;
+    if (v.length === 0) return;
+    const skipped = await this.getSkippedVersions();
+    if (skipped.has(v)) return;
+    skipped.add(v);
+    await this.writeSkippedVersions(skipped);
+  }
+
+  /**
+   * Set a wall-clock deadline (epoch ms) until which `update-available`
+   * notifications are suppressed. Used by "Remind me later" — pass
+   * `Date.now() + 24h` to dismiss for a day. Pass `0` to clear.
+   */
+  dismissUntil(timestampMs: number): void {
+    this.dismissUntilMs = Math.max(0, Math.floor(timestampMs));
+  }
+
+  /**
+   * Fetch concatenated release notes for every release between the
+   * current running version and the most recently observed latest. The
+   * result is cached on disk in `~/.localcode/cache/release-notes.json`
+   * (24h TTL) so reopening the modal does not re-fetch.
+   *
+   * Returns `null` when no `latestRelease` has been observed yet (the
+   * scheduler has not run a successful check). Otherwise the
+   * `DeltaReleaseNotes` body, possibly with `partial: true` when
+   * GitHub didn't return every intermediate tag.
+   */
+  async getDeltaNotes(
+    repoOverride?: string,
+    opts: FetchDeltaNotesOptions = {},
+  ): Promise<DeltaReleaseNotes | null> {
+    const release = this.latestRelease;
+    if (release === null) return null;
+    const repo = repoOverride ?? this.opts.repo ?? DEFAULT_GITHUB_REPO;
+    const fetchOpts: FetchDeltaNotesOptions = {
+      ...opts,
+      ...(opts.fetchFn === undefined && this.opts.fetchFn !== undefined
+        ? { fetchFn: this.opts.fetchFn }
+        : {}),
+      ...(opts.nowFn === undefined && this.opts.nowFn !== undefined
+        ? { nowFn: this.opts.nowFn }
+        : {}),
+    };
+    return fetchReleaseNotesBetween(
+      repo,
+      this.opts.currentVersion,
+      release.version,
+      fetchOpts,
+    );
+  }
+
+  /**
+   * Read the on-disk skipped list lazily. Once loaded the value is
+   * cached in-process so subsequent checks stay synchronous on the hot
+   * path.
+   */
+  private async getSkippedVersions(): Promise<Set<string>> {
+    if (this.skippedVersions !== null) return this.skippedVersions;
+    const path = this.opts.skipFilePath ?? getSkippedVersionsPath();
+    try {
+      const raw = await readFile(path, 'utf8');
+      const json = JSON.parse(raw) as unknown;
+      const parsed = SkippedVersionsSchema.safeParse(json);
+      if (parsed.success) {
+        this.skippedVersions = new Set(parsed.data.versions);
+        return this.skippedVersions;
+      }
+    } catch {
+      /* fresh install — fall through */
+    }
+    this.skippedVersions = new Set();
+    return this.skippedVersions;
+  }
+
+  private async writeSkippedVersions(set: Set<string>): Promise<void> {
+    const path = this.opts.skipFilePath ?? getSkippedVersionsPath();
+    const payload: SkippedVersionsFile = { versions: Array.from(set).sort() };
+    try {
+      await mkdir(dirname(path), { recursive: true });
+      const tmp = `${path}.${randomUUID()}.tmp`;
+      await writeFile(tmp, JSON.stringify(payload, null, 2), 'utf8');
+      await rename(tmp, path);
+      this.skippedVersions = set;
+    } catch {
+      // Persistence is best-effort — keep the in-memory mirror in sync
+      // so the rest of the session still respects the user's choice.
+      this.skippedVersions = set;
+    }
+  }
+  // UPDATE-MODAL-SECTION-END
 }
 
 // ---------- Process-wide singleton ----------

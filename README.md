@@ -4,7 +4,7 @@
 
 **A local-first, Claude-Code-class AI coding assistant for your terminal — and your browser.**
 
-[**English**](README.md) · [**Русский**](README.ru.md)
+[**Website**](https://grosa787.github.io/localcode) · [**English**](README.md) · [**Русский**](README.ru.md)
 
 [![Bun ≥ 1.1](https://img.shields.io/badge/Bun-≥1.1-black?logo=bun)](https://bun.sh)
 [![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -98,8 +98,43 @@ Explicit `apiKey` in `~/.localcode/config.toml` wins; environment variables are 
 
 ## Install
 
+Pick whichever channel fits your platform — all paths land at the same binary.
+
+### npm (any OS with Node 18+)
+
 ```sh
-# One-command install (Claude-Code-style)
+npm install -g @grosa787/localcode
+# or run once without installing
+npx @grosa787/localcode --help
+```
+
+The npm package is a shim: on install it downloads the matching prebuilt native
+binary from GitHub Releases, verifies its SHA-256, and installs `localcode` on
+your PATH. **Bun is not required on the user's machine.**
+
+### Debian / Ubuntu (.deb)
+
+```sh
+VER=0.20.0
+curl -fsSL -o localcode.deb \
+  https://github.com/grosa787/localcode/releases/download/v${VER}/localcode_${VER}_amd64.deb
+sudo dpkg -i localcode.deb
+# arm64: replace amd64 with arm64 in the URL above.
+```
+
+### Fedora / RHEL (.rpm)
+
+```sh
+VER=0.20.0
+sudo dnf install \
+  https://github.com/grosa787/localcode/releases/download/v${VER}/localcode-${VER}-1.x86_64.rpm
+# arm64: replace x86_64 with aarch64.
+```
+
+### One-command install script
+
+```sh
+# Claude-Code-style installer (clones + builds with Bun)
 curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash
 
 # Or pin a version / branch / tag
@@ -181,6 +216,10 @@ localcode [projectRoot] [flags]
 | ------------------------ | ------------------------------------------------------------------------------------------------- |
 | `localcode plugin <action>`  | Manage plugins: `install <path>` · `uninstall <id>` · `list` · `enable <id>` · `disable <id>` |
 | `localcode daemon`           | Run the persistent cron daemon (background scheduled wakeups).                                |
+| `localcode doctor [--json]`  | Diagnose installation health: config, backend, models, disk, hooks, MCP, git.                 |
+| `localcode completion <sh>`  | Print a shell-completion script (`bash`, `zsh`, `fish`) to stdout.                            |
+| `localcode demo`             | Replay a short bundled tour that demonstrates what LocalCode can do.                          |
+| `localcode update <action>`  | Auto-update from GitHub Releases (supports **delta patches** — typical update is ~200 KB).    |
 
 <br/>
 
@@ -477,7 +516,17 @@ CI: `bunx tsc --noEmit`, `bun test`, `bun build`, and a lint job that fails the 
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — the LocalCode binary you install is free to use, modify, and redistribute.
+
+## Source code
+
+LocalCode's distribution lives here: installer, docs, packaging, landing page, and the issue tracker. Active development happens in a separate, private repository.
+
+- **Binaries are MIT.** Anything you download from [Releases](https://github.com/grosa787/localcode/releases) is yours to use, fork, and redistribute under those terms.
+- **Bug reports + feature requests** — [open an issue](https://github.com/grosa787/localcode/issues/new). This is where we triage everything.
+- **Want to contribute code?** Open an issue describing the change. We accept code contributions via a short CLA + invite to the private source repo. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`BUILD_FROM_SOURCE.md`](BUILD_FROM_SOURCE.md).
+
+We picked this layout to keep the public surface focused on real users (downloads, issues, docs) while shipping fast. If you've used LocalCode under MIT, you keep MIT — closing future development doesn't retroactively close past releases.
 
 ---
 

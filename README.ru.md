@@ -98,8 +98,43 @@ localcode --web                      # браузерный UI (откроетс
 
 ## Установка
 
+Выберите удобный канал — все ведут к одному и тому же бинарю.
+
+### npm (любая ОС с Node 18+)
+
 ```sh
-# Установка одной командой (как у Claude Code)
+npm install -g @grosa787/localcode
+# или однократный запуск без установки
+npx @grosa787/localcode --help
+```
+
+npm-пакет — это шим: при установке `postinstall`-скрипт скачивает соответствующий
+прекомпилированный бинарь из GitHub Releases, проверяет его SHA-256 и кладёт
+`localcode` в PATH. **Bun на машине пользователя не требуется.**
+
+### Debian / Ubuntu (.deb)
+
+```sh
+VER=0.20.0
+curl -fsSL -o localcode.deb \
+  https://github.com/grosa787/localcode/releases/download/v${VER}/localcode_${VER}_amd64.deb
+sudo dpkg -i localcode.deb
+# arm64: замените amd64 на arm64 в URL выше.
+```
+
+### Fedora / RHEL (.rpm)
+
+```sh
+VER=0.20.0
+sudo dnf install \
+  https://github.com/grosa787/localcode/releases/download/v${VER}/localcode-${VER}-1.x86_64.rpm
+# arm64: замените x86_64 на aarch64.
+```
+
+### Установка одной командой (скрипт)
+
+```sh
+# Установщик в стиле Claude Code (клон + сборка через Bun)
 curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash
 
 # Или с привязкой к версии / ветке / тегу
@@ -181,6 +216,10 @@ localcode [projectRoot] [флаги]
 | ---------------------------- | ------------------------------------------------------------------------------------------------- |
 | `localcode plugin <action>`  | Управление плагинами: `install <path>` · `uninstall <id>` · `list` · `enable <id>` · `disable <id>` |
 | `localcode daemon`           | Запустить persistent cron daemon (фоновые расписания).                                            |
+| `localcode doctor [--json]`  | Диагностика установки: config, бэкенд, модели, диск, хуки, MCP, git.                              |
+| `localcode completion <sh>`  | Печатает completion-скрипт (`bash`, `zsh`, `fish`) в stdout.                                      |
+| `localcode demo`             | Запускает короткий встроенный тур по возможностям LocalCode.                                      |
+| `localcode update <action>`  | Авто-обновление с GitHub Releases (с **delta-патчами** — обычное обновление ~200 KB).             |
 
 <br/>
 
@@ -477,7 +516,17 @@ CI: `bunx tsc --noEmit`, `bun test`, `bun build`, плюс lint-джоб, кот
 
 ## Лицензия
 
-[MIT](LICENSE)
+[MIT](LICENSE) — бинарь LocalCode, который вы устанавливаете, можно свободно использовать, изменять и распространять.
+
+## Исходный код
+
+В этом репозитории живёт дистрибуция: установщик, документация, упаковка, лендинг и трекер задач. Активная разработка идёт в отдельном приватном репозитории.
+
+- **Бинари под MIT.** Всё, что вы скачиваете из [Releases](https://github.com/grosa787/localcode/releases), ваше — используйте, форкайте, перепродавайте на условиях MIT.
+- **Сообщения об ошибках и запросы фич** — [заведите issue](https://github.com/grosa787/localcode/issues/new). Здесь мы триажим всё.
+- **Хотите контрибьютить код?** Откройте issue с описанием изменения. Принимаем правки через короткое CLA + инвайт в приватный репозиторий. См. [`CONTRIBUTING.md`](CONTRIBUTING.md) и [`BUILD_FROM_SOURCE.md`](BUILD_FROM_SOURCE.md).
+
+Такая раскладка нужна, чтобы публичная часть была сфокусирована на реальных пользователях (скачивания, issues, документация), а разработка шла быстрее. Если вы получили LocalCode под MIT — MIT за вами остаётся; закрытие будущей разработки не откатывает прежние релизы задним числом.
 
 ---
 

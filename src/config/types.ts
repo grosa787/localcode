@@ -577,12 +577,28 @@ export const UpdaterConfigSchema = z
     channel: z.enum(['stable', 'beta']).default('stable'),
     checkIntervalHours: z.number().int().min(1).max(168).default(6),
     autoDownload: z.boolean().default(true),
+    /**
+     * Fire an immediate check ~5s after launch in addition to the
+     * recurring interval. Default true — matches the user-facing
+     * "check on every launch" requirement; the on-disk 6h cache still
+     * dedupes repeated boots so we don't hammer GitHub.
+     */
+    checkOnLaunch: z.boolean().default(true),
+    /**
+     * When true (default) the background check produces no visible UI
+     * affordance ("checking…") — only the eventual modal trigger on
+     * `update-available`. Flip to false to surface a small status
+     * indicator for power users who want feedback during the check.
+     */
+    silentBackground: z.boolean().default(true),
   })
   .default({
     enabled: true,
     channel: 'stable',
     checkIntervalHours: 6,
     autoDownload: true,
+    checkOnLaunch: true,
+    silentBackground: true,
   });
 
 export type UpdaterConfig = z.infer<typeof UpdaterConfigSchema>;
@@ -620,6 +636,24 @@ export type OutputStyle = z.infer<typeof OutputStyleSchema>;
 export const LocaleSchema = z.enum(['en', 'ru']);
 export type Locale = z.infer<typeof LocaleSchema>;
 // LOCALE-CONFIG-SECTION-END -----------------------------------------
+
+// FIRST-RUN-CONFIG-SECTION ------------------------------------------
+//
+// First-run UX state. Currently a single Boolean tracking whether the
+// interactive tutorial overlay has been shown to the user. Optional at
+// the root so legacy configs round-trip cleanly; the TutorialOverlay
+// fires whenever the field is `undefined` OR `false`, and the
+// composition root patches it to `true` once the overlay dismisses
+// (either completion or Esc — the tutorial is skippable, we never
+// re-show automatically). Re-show on demand happens via `/tutorial`.
+export const FirstRunSchema = z
+  .object({
+    tutorialShown: z.boolean().default(false),
+  })
+  .default({ tutorialShown: false });
+
+export type FirstRunConfig = z.infer<typeof FirstRunSchema>;
+// FIRST-RUN-CONFIG-SECTION-END --------------------------------------
 
 // ---------- Root schema ----------
 
@@ -681,6 +715,13 @@ export const ConfigSchema = z.object({
   // language picker which then writes the chosen value back.
   locale: LocaleSchema.optional(),
   // LOCALE-CONFIG-SECTION-END
+  // FIRST-RUN-CONFIG-SECTION — first-run UX state (tutorial dismissed?).
+  // Optional at the root so old TOMLs round-trip cleanly; Zod fills in
+  // `{ tutorialShown: false }` when the section is absent. The tutorial
+  // overlay fires whenever `firstRun?.tutorialShown !== true`, and the
+  // composition root patches it to `true` on overlay dismiss.
+  firstRun: FirstRunSchema.optional(),
+  // FIRST-RUN-CONFIG-SECTION-END
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

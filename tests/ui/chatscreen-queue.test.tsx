@@ -89,9 +89,13 @@ describe('ChatScreen — type-ahead-while-busy queue invariants', () => {
     expect(source).toContain('lastTurnError');
     // The gate is the explicit !== null check inside the flush effect.
     expect(source).toMatch(/lastTurnError\s*!==\s*null/);
-    // The error-paused banner copy must be present so the user knows
-    // why the queue stopped draining.
-    expect(source).toContain('Queue paused — last turn failed');
+    // LOCALE-APPLY-SECTION — the literal English banner copy moved
+    // into `src/i18n/strings/en.ts`. ChatScreen renders it via
+    // `t('chat.queuePausedBanner')` so the user-visible signal survives
+    // the migration; we assert on the key invocation, the i18n unit
+    // tests cover the actual copy.
+    expect(source).toContain("t('chat.queuePausedBanner')");
+    // LOCALE-APPLY-SECTION-END
   });
 
   test('Esc cancel does NOT clear the queue on first press', () => {

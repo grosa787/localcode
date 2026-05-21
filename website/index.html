@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0a12" />
+    <meta name="description" content="LocalCode — a local-first AI coding assistant for your terminal and browser. Bring your own LLM. Open-source." />
+    <meta property="og:title" content="LocalCode — local-first AI coding assistant" />
+    <meta property="og:description" content="Bring your own LLM. Terminal + Web. Lightning-fast, inspectable, safe." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>LocalCode — local-first AI coding assistant</title>
+    <!-- Inline critical CSS so the hero paints before JS hydrates -->
+    <style>
+      :root { color-scheme: dark light; }
+      html, body { margin: 0; padding: 0; background: #0a0a12; color: #ece9f3; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif; }
+      body[data-theme='light'] { background: #f7f4ff; color: #1a1424; }
+      #root { min-height: 100vh; }
+      .noscript-hero { padding: 12vh 6vw; max-width: 960px; margin: 0 auto; }
+      .noscript-hero h1 { font-size: clamp(2rem, 6vw, 4rem); margin: 0 0 1rem; }
+      .noscript-hero pre { background: #16121f; padding: 1rem 1.25rem; border-radius: 8px; overflow-x: auto; }
+      @media (prefers-color-scheme: light) {
+        body { background: #f7f4ff; color: #1a1424; }
+        .noscript-hero pre { background: #ece5fa; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <!-- SEO fallback: rendered without JS. Replaced once React hydrates. -->
+      <noscript>
+        <section class="noscript-hero">
+          <h1>LocalCode</h1>
+          <p>A local-first AI coding assistant for your terminal and browser. Bring your own LLM.</p>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash</code></pre>
+          <p><a href="https://github.com/grosa787/localcode" style="color:#a855f7">View on GitHub</a></p>
+        </section>
+      </noscript>
+      <section class="noscript-hero" id="seo-fallback">
+        <h1>LocalCode</h1>
+        <p>A local-first AI coding assistant for your terminal and browser. Bring your own LLM.</p>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash</code></pre>
+      </section>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

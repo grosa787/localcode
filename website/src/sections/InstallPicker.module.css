@@ -1,0 +1,41 @@
+.section { padding-top: clamp(2rem, 5vh, 5rem); }
+
+.heading {
+  font-size: clamp(1.6rem, 3.2vw, 2.4rem);
+  margin: 0 0 0.6rem;
+  letter-spacing: -0.02em;
+}
+
+.sub {
+  color: var(--fg-mute);
+  font-size: 1.02rem;
+  margin: 0 0 1.5rem;
+}
+
+.platformRow {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.platBtn {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 0.55rem 0.95rem;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--fg-mute);
+  letter-spacing: 0.02em;
+}
+
+.platBtn:hover { color: var(--fg); }
+
+.platActive {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.cmdWrap { max-width: 720px; }

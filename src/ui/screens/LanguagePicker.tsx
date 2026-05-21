@@ -8,6 +8,12 @@
  * The picker is a single, focused screen — two rows (English / Russian),
  * arrow-key navigation, Enter to confirm. The selected row is rendered
  * with the existing Nox accent so it matches the rest of the TUI.
+ *
+ * LOCALE-APPLY-SECTION — the picker's hint/nav strings come from the
+ * i18n module so re-opening it via `/language` after a switch to Russian
+ * shows the Russian copy. The picker headline stays bilingual on purpose
+ * (`Welcome / Добро пожаловать`) because the very first launch has no
+ * persisted locale yet — both should be readable. LOCALE-APPLY-SECTION-END
  */
 
 import React, { useCallback, useState } from 'react';
@@ -15,6 +21,7 @@ import { Box, Text, useInput } from 'ink';
 import type { Locale } from '../../types/global.js';
 import { noxPalette, textMuted } from '../theme.js';
 import { NoxBig } from '../components/Nox.js';
+import { useT } from '../../i18n/index.js';
 
 export interface LanguagePickerProps {
   /**
@@ -50,6 +57,9 @@ function LanguagePicker({
     const i = CHOICES.findIndex((c) => c.id === initial);
     return i < 0 ? 0 : i;
   });
+  // LOCALE-APPLY-SECTION
+  const { t } = useT();
+  // LOCALE-APPLY-SECTION-END
 
   const moveUp = useCallback(() => {
     setIndex((i) => (i <= 0 ? CHOICES.length - 1 : i - 1));
@@ -87,6 +97,9 @@ function LanguagePicker({
     <Box flexDirection="column" paddingX={2} paddingY={1}>
       <NoxBig />
       <Box marginTop={1} flexDirection="column">
+        {/* LOCALE-APPLY-SECTION — keep the bilingual welcome only on the
+            picker headline so the very first launch (no persisted locale
+            yet) is readable to either audience. */}
         <Text bold color={noxPalette.white}>
           Welcome to LocalCode / Добро пожаловать в LocalCode
         </Text>
@@ -95,6 +108,7 @@ function LanguagePicker({
             Choose your language / Выберите язык
           </Text>
         </Box>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
       <Box flexDirection="column" marginTop={1} paddingX={1}>
         {CHOICES.map((c, i) => {
@@ -115,9 +129,11 @@ function LanguagePicker({
         })}
       </Box>
       <Box marginTop={1}>
-        <Text color={textMuted}>
-          ↑/↓ navigate · Enter to confirm
-        </Text>
+        {/* LOCALE-APPLY-SECTION — picker nav hint follows the active
+            locale, so `/language` re-open after a switch shows the
+            Russian copy. */}
+        <Text color={textMuted}>{t('language.navHint')}</Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
     </Box>
   );

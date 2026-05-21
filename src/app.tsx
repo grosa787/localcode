@@ -73,8 +73,26 @@ import SettingsOverlay from '@/ui/components/SettingsOverlay';
 import { SoundPlayer } from '@/integration/sound';
 
 import OnboardingScreen from '@/ui/screens/OnboardingScreen';
+// SPLASH-MOUNT-SECTION — animated first-impression welcome screen.
+// Shown only on the very first launch (no config on disk); after the
+// splash auto-advances OR the user presses a key, the App falls through
+// to the language picker (which then advances to onboarding → chat).
+import SplashScreen from '@/ui/screens/SplashScreen';
+// SPLASH-MOUNT-SECTION-END
+// TUTORIAL-MOUNT-SECTION — interactive first-run walkthrough overlay.
+// Shown over the chat screen on the very first session AFTER onboarding
+// completes (gated by `config.firstRun?.tutorialShown`). Re-invokable
+// on demand via the `/tutorial` slash command.
+import TutorialOverlay from '@/ui/overlays/TutorialOverlay';
+// TUTORIAL-MOUNT-SECTION-END
 // LANGUAGE-PICKER-MOUNT-SECTION — first-launch language picker.
 import LanguagePicker from '@/ui/screens/LanguagePicker';
+// LOCALE-APPLY-WIRE-SECTION — TUI i18n provider. Wraps every rendered
+// screen so the `config.locale` value flows through React context to
+// every `useT()` consumer and the slash-command print path (via the
+// module-level mirror in `src/i18n/index.ts`).
+import { LocaleProvider, t as appT } from '@/i18n';
+// LOCALE-APPLY-WIRE-SECTION-END
 // LANGUAGE-PICKER-MOUNT-SECTION-END
 import ChatScreen from '@/ui/screens/ChatScreen';
 import SkillsScreen from '@/ui/screens/SkillsScreen';
@@ -146,6 +164,12 @@ import {
   // LANGUAGE-CMD-SECTION — `/language` (alias `/lang`) factory.
   createLanguageCommand,
   // LANGUAGE-CMD-SECTION-END
+  // WEB-CMD-SECTION — `/web` (and `/web stop`) — boot the embedded web
+  // UI in-process so the user can continue the current session in their
+  // browser without leaving the TUI. The composition root owns the
+  // singleton handle below (see WEB-LAUNCH-SECTION).
+  createWebCommand,
+  // WEB-CMD-SECTION-END
   createWakeupsCommand,
   createUndoCommand,
   createWorktreesCommand,
@@ -168,8 +192,15 @@ import {
   createMemoryCommand,
   createMemorySaveCommand,
   // MEMORY-SAVE-SECTION-END
+  // DEMO-TUTORIAL-CMD-SECTION — bundled tour replay + first-run overlay.
+  createDemoCommand,
+  createTutorialCommand,
+  // DEMO-TUTORIAL-CMD-SECTION-END
   registerBuiltinCommands,
 } from '@/commands/index';
+// DEMO-TUTORIAL-CMD-SECTION — Player ctor for the in-session `/demo`.
+import { Player } from '@/recordings';
+// DEMO-TUTORIAL-CMD-SECTION-END
 // PROACTIVE-DETECTOR-WIRE-SECTION (Wave 6D imports)
 import {
   ProactiveDetector,
@@ -222,6 +253,7 @@ import { getProcessMcpRegistry } from '@/mcp';
 // owns its LSP child process. Disposed on unmount.
 import { OntologyIndexer } from '@/ontology';
 import OntologyGraph from '@/ui/overlays/OntologyGraph';
+import UpdateOverlay from '@/ui/overlays/UpdateOverlay';
 import { createOntologyCommand } from '@/commands';
 // ONTOLOGY-WIRE-SECTION-END
 // PROCESS-MONITOR-WIRE-SECTION — long-running process registry +
@@ -301,7 +333,7 @@ export interface AppProps {
   readonly dangerouslyAllowAll: boolean;
   readonly resumeSessionId: string | null;
   readonly modelOverride: string | null;
-  readonly startScreen: 'onboarding' | 'chat';
+  readonly startScreen: 'splash' | 'onboarding' | 'chat';
   /**
    * R8 (Agent 8) — when true, skip the in-mount startup model refresh
    * effect. Driven by the `--no-refresh-models` CLI flag in cli.tsx.
@@ -666,6 +698,36 @@ function App(props: AppProps): React.JSX.Element {
   // cleared on the overlay's onClose callback.
   const [ontologyGraphSymbol, setOntologyGraphSymbol] = useState<string | null>(null);
   // ONTOLOGY-WIRE-SECTION-END
+  // UPDATE-OVERLAY-MOUNT-SECTION
+  // Holds the most-recent `update-available` payload from the updater
+  // singleton. When non-null the full-screen <UpdateOverlay> mounts above
+  // the chat. `Esc` / "Later" clears it (without persistence); "Install"
+  // forwards to the updater's download path; "Skip" persists.
+  const [updateOverlayInfo, setUpdateOverlayInfo] = useState<{
+    currentVersion: string;
+    latestVersion: string;
+    releaseUrl: string;
+    releaseName: string;
+    body: string;
+  } | null>(null);
+  const [updateDownloadedVersion, setUpdateDownloadedVersion] = useState<string | null>(null);
+  const updaterRef = useRef<{
+    skipVersion(v: string): Promise<void>;
+    dismissUntil(t: number): void;
+    downloadLatest(): Promise<{ ok: boolean; error?: string }>;
+  } | null>(null);
+  // UPDATE-OVERLAY-MOUNT-SECTION-END
+
+  // TUTORIAL-MOUNT-SECTION — interactive walkthrough overlay state.
+  // `null` keeps the overlay closed; setting non-null mounts it over
+  // the chat screen until the user presses Esc / Enter past the final
+  // step. Fires automatically on first chat-screen render when
+  // `config.firstRun?.tutorialShown !== true`; re-shown on demand via
+  // the `/tutorial` slash command. The composition root owns both
+  // halves so the persistence write only happens on dismiss.
+  const [tutorialOpen, setTutorialOpen] = useState<boolean>(false);
+  const tutorialAutoTriggeredRef = useRef<boolean>(false);
+  // TUTORIAL-MOUNT-SECTION-END
 
   // Chat-screen state (messages / streaming / approvals / history / queue).
   const [chatState, chatDispatch] = useReducer(chatReducer, initialChatState);
@@ -1646,6 +1708,35 @@ function App(props: AppProps): React.JSX.Element {
     return executor;
   }, [projectRoot, dangerouslyAllowAll, config?.permissions.autoApprove, config?.permissions.profile, contextManager, soundPlayer, plugins, hookEngine, sessionId, sessionManager, ontologyIndexer]);
 
+  // TUTORIAL-MOUNT-SECTION — auto-trigger on first chat-screen entry
+  // when the persisted config indicates the tutorial has not yet been
+  // shown. Persistence happens in `dismissTutorial` below so a partial
+  // dismissal (Esc) still marks it shown — the tutorial is skippable
+  // and we explicitly never auto-re-show.
+  useEffect(() => {
+    if (tutorialAutoTriggeredRef.current) return;
+    if (screen !== 'chat') return;
+    if (config === null) return;
+    if (config.firstRun?.tutorialShown === true) return;
+    tutorialAutoTriggeredRef.current = true;
+    setTutorialOpen(true);
+  }, [screen, config]);
+
+  const dismissTutorial = useCallback((): void => {
+    setTutorialOpen(false);
+    try {
+      const merged = configManager.update({
+        firstRun: { tutorialShown: true },
+      });
+      setConfig(merged);
+    } catch {
+      // Swallow — persistence failure shouldn't keep the user trapped
+      // in a re-opening tutorial. The in-memory ref already prevents
+      // a re-trigger for this session.
+    }
+  }, [configManager]);
+  // TUTORIAL-MOUNT-SECTION-END
+
   // LANGUAGE-PICKER-MOUNT-SECTION — first-launch redirect.
   // When the app boots straight into onboarding (no config on disk
   // yet) we want the language picker to appear FIRST. This effect
@@ -1991,6 +2082,8 @@ function App(props: AppProps): React.JSX.Element {
       channel: 'stable' as const,
       checkIntervalHours: 6,
       autoDownload: true,
+      checkOnLaunch: true,
+      silentBackground: true,
     };
     if (!updaterCfg.enabled) return;
     let unsubscribe: (() => void) | null = null;
@@ -2007,17 +2100,29 @@ function App(props: AppProps): React.JSX.Element {
           intervalMs: updaterCfg.checkIntervalHours * 60 * 60 * 1_000,
           forceNew: true,
         });
+        updaterRef.current = updater;
         unsubscribe = updater.on((event) => {
           if (event.type === 'update-available') {
-            setChatLog((prev) => [
-              ...prev,
-              `📦 Update available: v${event.currentVersion} → v${event.release.version}. Downloading in background…`,
-            ]);
+            // UPDATE-OVERLAY-MOUNT-SECTION — surface a polished overlay
+            // instead of the prior synthetic chat log entry. Silent
+            // background mode is enforced by NOT emitting any pre-event
+            // "checking…" — the only visible affordance is the overlay
+            // itself.
+            setUpdateOverlayInfo({
+              currentVersion: event.currentVersion,
+              latestVersion: event.release.version,
+              releaseUrl: event.release.htmlUrl,
+              releaseName: event.release.name,
+              body: event.release.body,
+            });
           } else if (event.type === 'update-downloaded') {
-            setChatLog((prev) => [
-              ...prev,
-              `✅ Update ready: v${event.version}. Restart LocalCode to apply.`,
-            ]);
+            setUpdateDownloadedVersion(event.version);
+            if (updaterCfg.silentBackground !== true) {
+              setChatLog((prev) => [
+                ...prev,
+                `Update ready: v${event.version}. Restart LocalCode to apply.`,
+              ]);
+            }
           } else if (event.type === 'update-error') {
             // Quiet by default — only surface when in diagnostics
             // mode to avoid spamming users on transient failures.
@@ -2029,7 +2134,9 @@ function App(props: AppProps): React.JSX.Element {
             }
           }
         });
-        updater.start();
+        if (updaterCfg.checkOnLaunch !== false) {
+          updater.start();
+        }
         stop = (): void => {
           try {
             updater.stop();
@@ -2044,6 +2151,7 @@ function App(props: AppProps): React.JSX.Element {
     return () => {
       if (unsubscribe !== null) unsubscribe();
       if (stop !== null) stop();
+      updaterRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config?.updater?.enabled]);
@@ -2601,6 +2709,60 @@ function App(props: AppProps): React.JSX.Element {
     const sensitiveCmd = createSensitiveCommand();
     // SENSITIVE-CMD-SECTION-END
 
+    // WEB-LAUNCH-SECTION — `/web` boots the embedded web server
+    // in-process, reusing the same SQLite handle the TUI writes to.
+    // `launchWeb`/`stopWeb` resolve against a module-level singleton
+    // (`webHandleRef`) so repeated invocations are idempotent — the
+    // second `/web` simply returns the same URL with the fresh session
+    // fragment so the browser can re-focus the current session.
+    const webCmd = createWebCommand({
+      launchWeb: async (sessionId: string | null) => {
+        const { ensureWebServerStarted } = await import('@/web/embedded-launch');
+        return ensureWebServerStarted({
+          projectRoot,
+          sessionId,
+        });
+      },
+      stopWeb: async () => {
+        const { stopWebServer } = await import('@/web/embedded-launch');
+        await stopWebServer();
+      },
+      openBrowser: async (url: string) => {
+        const { openBrowser } = await import('@/web/server/open-browser');
+        await openBrowser(url);
+      },
+    });
+    // WEB-LAUNCH-SECTION-END
+
+    // DEMO-TUTORIAL-CMD-SECTION — wire `/demo` and `/tutorial`. `/demo`
+    // routes each replay entry through `appendLog` so the bundled tour
+    // shows up as system-style lines in the chat log (matches the
+    // chatLog → synthetic system message pipeline above). `/tutorial`
+    // simply flips the overlay state on; the React mount block reads
+    // `tutorialOpen` directly so the command is a thin shim.
+    const demoCmd = createDemoCommand({
+      player: new Player(),
+      dispatch: (entry) => {
+        // Inline the same one-line formatter the standalone CLI uses so
+        // the in-session output stays consistent across surfaces.
+        appendLog(
+          entry.kind === 'user'
+            ? `[you]      ${entry.content}`
+            : entry.kind === 'assistant'
+              ? `[localcode] ${entry.content}`
+              : entry.kind === 'tool_call'
+                ? `[tool ${entry.name}] ${entry.result.split('\n')[0] ?? ''}`
+                : `[info]     ${entry.content}`,
+        );
+      },
+    });
+    const tutorialCmd = createTutorialCommand({
+      open: (): void => {
+        setTutorialOpen(true);
+      },
+    });
+    // DEMO-TUTORIAL-CMD-SECTION-END
+
     registerBuiltinCommands(registry, {
       init: initCmd,
       model: modelCmd,
@@ -2661,6 +2823,13 @@ function App(props: AppProps): React.JSX.Element {
       watch: watchCmd,
       diagnose: diagnoseCmd,
       // PROCESS-MONITOR-WIRE-SECTION-END
+      // WEB-CMD-SECTION
+      web: webCmd,
+      // WEB-CMD-SECTION-END
+      // DEMO-TUTORIAL-CMD-SECTION
+      demo: demoCmd,
+      tutorial: tutorialCmd,
+      // DEMO-TUTORIAL-CMD-SECTION-END
     });
 
     // Extra built-ins added here (not in Agent 6 factories).
@@ -2689,6 +2858,16 @@ function App(props: AppProps): React.JSX.Element {
         // wait for the spawned subprocesses on the event loop drain.
         fireSessionEndHookRef.current('user_quit');
         await summariseWithTimeoutRef.current(3000);
+        // WEB-LAUNCH-SECTION — tear down the embedded web server (if
+        // running) so the user's `/exit` releases the port and stops
+        // the WS event loop. Best-effort — never block /exit.
+        try {
+          const { stopWebServer } = await import('@/web/embedded-launch');
+          await stopWebServer();
+        } catch {
+          // ignore
+        }
+        // WEB-LAUNCH-SECTION-END
         onSessionExit?.(sessionIdRef.current);
         exit();
       },
@@ -5564,24 +5743,53 @@ function App(props: AppProps): React.JSX.Element {
 
   // ---------- Render ----------
 
+  // LOCALE-APPLY-WIRE-SECTION — propagate the active locale into the
+  // React tree. The provider keeps the module-level mirror in sync via
+  // `useEffect`, so non-React print paths (slash commands) also pick
+  // up the latest value automatically.
+  const activeLocale = config?.locale ?? 'en';
+  const renderTree = (node: React.JSX.Element): React.JSX.Element => (
+    <LocaleProvider locale={activeLocale}>{node}</LocaleProvider>
+  );
+  // LOCALE-APPLY-WIRE-SECTION-END
+
   // Startup error splash
   if (configLoadError !== null && screen === 'chat') {
-    return (
+    // LOCALE-APPLY-WIRE-SECTION — error splash strings flow through the
+    // i18n table so users see Russian copy when their persisted locale
+    // is `ru` (the picker may have set it before the failed config load).
+    return renderTree(
       <Box flexDirection="column" paddingX={1} paddingY={1}>
-        <Text color="red">Failed to load config.</Text>
+        <Text color="red">{appT('chat.configLoadFailed', undefined, activeLocale)}</Text>
         <Text color="gray">{configLoadError}</Text>
         <Box marginTop={1}>
-          <Text color="gray">Run `localcode --reconfigure` to re-run onboarding.</Text>
+          <Text color="gray">{appT('chat.reconfigureHint', undefined, activeLocale)}</Text>
         </Box>
       </Box>
     );
   }
+  // LOCALE-APPLY-WIRE-SECTION-END
 
   // Dispatch to the active screen.
   switch (screen) {
+    // SPLASH-MOUNT-SECTION — animated first-impression welcome.
+    // Always advances to the language picker on completion (Enter / Esc
+    // / any key OR after the auto-advance timeout). The splash never
+    // re-shows for the same user — `'splash'` only appears as the
+    // initial screen value from cli.tsx and we transition out of it
+    // here.
+    case 'splash':
+      return renderTree(
+        <SplashScreen
+          onDone={(): void => {
+            setScreen('languagePicker');
+          }}
+        />
+      );
+    // SPLASH-MOUNT-SECTION-END
     // LANGUAGE-PICKER-MOUNT-SECTION — first-launch language picker.
     case 'languagePicker':
-      return (
+      return renderTree(
         <LanguagePicker
           initial={config?.locale ?? detectSystemLocale()}
           onSelect={onLanguageSelect}
@@ -5589,7 +5797,7 @@ function App(props: AppProps): React.JSX.Element {
       );
     // LANGUAGE-PICKER-MOUNT-SECTION-END
     case 'onboarding':
-      return (
+      return renderTree(
         <OnboardingScreen
           onComplete={onOnboardComplete}
           pingBackend={pingBackend}
@@ -5597,7 +5805,7 @@ function App(props: AppProps): React.JSX.Element {
         />
       );
     case 'skills':
-      return (
+      return renderTree(
         <SkillsScreen
           skills={skills}
           onToggle={onToggleSkill}
@@ -5608,7 +5816,7 @@ function App(props: AppProps): React.JSX.Element {
       );
     case 'modelSelect': {
       if (config === null) {
-        return (
+        return renderTree(
           <Box paddingX={1}>
             <Text color="gray">Loading…</Text>
           </Box>
@@ -5622,7 +5830,7 @@ function App(props: AppProps): React.JSX.Element {
       // paths (no-arg `/model`, status-bar shortcut, etc.) the field
       // is null and ModelSelectScreen falls back to its default
       // empty-filter behaviour.
-      return (
+      return renderTree(
         <ModelSelectScreen
           available={config.model.available}
           current={modelOverride ?? config.model.current}
@@ -5637,7 +5845,7 @@ function App(props: AppProps): React.JSX.Element {
     }
     case 'chat': {
       if (config === null) {
-        return (
+        return renderTree(
           <Box paddingX={1}>
             <Text color="gray">Loading configuration…</Text>
           </Box>
@@ -5655,6 +5863,23 @@ function App(props: AppProps): React.JSX.Element {
         ...syntheticMessages,
         ...chatState.messages,
       ];
+      // TUTORIAL-MOUNT-SECTION — render the first-run walkthrough as a
+      // full-takeover overlay above the chat tree. Mirrors the
+      // CommandPalette pattern (its own InputDispatcherProvider so the
+      // ink useInput plumbing reaches the overlay). Skippable via Esc;
+      // dismiss writes `firstRun.tutorialShown = true` so we never
+      // auto-re-show.
+      if (tutorialOpen) {
+        return renderTree(
+          <Box flexDirection="column">
+            <InputDispatcherProvider mode="overlay">
+              <DiffViewerInputPump />
+              <TutorialOverlay onDone={dismissTutorial} />
+            </InputDispatcherProvider>
+          </Box>
+        );
+      }
+      // TUTORIAL-MOUNT-SECTION-END
       // CMD-PALETTE-MOUNT-SECTION (Wave 5A — TA team)
       // -----------------------------------------------------------
       // The command palette lives outside ChatScreen's OverlayState
@@ -5663,7 +5888,7 @@ function App(props: AppProps): React.JSX.Element {
       // Ctrl+K from anywhere; selection-side effects (insert text /
       // run command / open resume) are handled in `onPaletteSelect`.
       if (paletteOpen) {
-        return (
+        return renderTree(
           <Box flexDirection="column">
             <InputDispatcherProvider mode="overlay">
               <DiffViewerInputPump />
@@ -5692,7 +5917,7 @@ function App(props: AppProps): React.JSX.Element {
       // SECTION` in InputDispatcher.tsx) and exits when the user
       // presses q / Esc.
       if (diffOpen) {
-        return (
+        return renderTree(
           <Box flexDirection="column">
             <InputDispatcherProvider mode="diff-viewer">
               <DiffViewerInputPump />
@@ -5707,11 +5932,49 @@ function App(props: AppProps): React.JSX.Element {
       }
       // DIFF-VIEWER-MOUNT-SECTION-END
 
+      // UPDATE-OVERLAY-MOUNT-SECTION — full-screen update modal. Mounts
+      // above all other overlays except active streaming so the user
+      // sees the prompt at the next idle moment. Key bindings: i / l /
+      // s / Esc (see UpdateOverlay component).
+      if (updateOverlayInfo !== null) {
+        return renderTree(
+          <Box flexDirection="column">
+            <UpdateOverlay
+              info={updateOverlayInfo}
+              downloaded={updateDownloadedVersion === updateOverlayInfo.latestVersion}
+              onInstall={() => {
+                const u = updaterRef.current;
+                if (u !== null) {
+                  void u.downloadLatest();
+                }
+                setUpdateOverlayInfo(null);
+              }}
+              onLater={() => {
+                const u = updaterRef.current;
+                if (u !== null) {
+                  u.dismissUntil(Date.now() + 24 * 60 * 60 * 1_000);
+                }
+                setUpdateOverlayInfo(null);
+              }}
+              onSkip={(v) => {
+                const u = updaterRef.current;
+                if (u !== null) {
+                  void u.skipVersion(v);
+                }
+                setUpdateOverlayInfo(null);
+              }}
+              onClose={() => setUpdateOverlayInfo(null)}
+            />
+          </Box>
+        );
+      }
+      // UPDATE-OVERLAY-MOUNT-SECTION-END
+
       // ONTOLOGY-WIRE-SECTION — full-screen `<OntologyGraph>` overlay.
       // Opened by `/ontology graph <symbol>`; takes over input via its
       // own `useInput` hook (Esc / q close it).
       if (ontologyGraphSymbol !== null) {
-        return (
+        return renderTree(
           <Box flexDirection="column">
             <OntologyGraph
               ontology={ontologyIndexer.current}
@@ -5729,7 +5992,7 @@ function App(props: AppProps): React.JSX.Element {
       // it above the chat frame and let it fully take over input until
       // it fires apply/cancel.
       if (chatState.overlayKind === 'provider') {
-        return (
+        return renderTree(
           <Box flexDirection="column">
             <ProviderOverlay
               currentBackend={config.backend.type}
@@ -5748,7 +6011,7 @@ function App(props: AppProps): React.JSX.Element {
       // own internal render of SkillInputOverlay is suppressed below
       // by passing `skillOverlay={false}` whenever we own the render.
       if (chatState.skillOverlay) {
-        return (
+        return renderTree(
           <Box flexDirection="column">
             <SkillInputOverlay
               onSubmit={onSkillSubmit}
@@ -5776,7 +6039,7 @@ function App(props: AppProps): React.JSX.Element {
             return null;
           }
         })();
-        return (
+        return renderTree(
           <Box flexDirection="column">
             <SettingsOverlay
               globalGeneration={config.generation}
@@ -5793,7 +6056,7 @@ function App(props: AppProps): React.JSX.Element {
           </Box>
         );
       }
-      return (
+      return renderTree(
         <ChatScreen
           config={config}
           projectRoot={projectRoot}
@@ -5862,7 +6125,7 @@ function App(props: AppProps): React.JSX.Element {
     default: {
       const _exhaustive: never = screen;
       void _exhaustive;
-      return <Text>unknown screen</Text>;
+      return renderTree(<Text>unknown screen</Text>);
     }
   }
 }

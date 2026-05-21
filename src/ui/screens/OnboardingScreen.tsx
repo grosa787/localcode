@@ -20,6 +20,11 @@ import { noxPalette, spinnerFrames, textMuted, theme } from '../theme.js';
 import { NoxBig } from '../components/Nox.js';
 import { PROVIDER_DEFAULTS, PROVIDER_META, resolveApiKey } from '../../config/defaults.js';
 import type { AppConfig, Backend } from '../../types/global.js';
+// LOCALE-APPLY-SECTION — every user-visible prompt on this screen flows
+// through the i18n table. Provider display names stay in English because
+// they come from `PROVIDER_META` (a brand catalog, not UI copy).
+import { useT } from '../../i18n/index.js';
+// LOCALE-APPLY-SECTION-END
 
 export interface OnboardingScreenProps {
   readonly onComplete: (config: AppConfig) => void;
@@ -105,6 +110,9 @@ interface BackendSelectProps {
 
 function BackendSelect({ onPick, onExit }: BackendSelectProps): React.JSX.Element {
   const [index, setIndex] = useState<number>(0);
+  // LOCALE-APPLY-SECTION
+  const { t } = useT();
+  // LOCALE-APPLY-SECTION-END
 
   const moveUp = useCallback(() => {
     setIndex((i) => {
@@ -167,11 +175,9 @@ function BackendSelect({ onPick, onExit }: BackendSelectProps): React.JSX.Elemen
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <NoxBig />
       <Box marginTop={1}>
-        <Text color={textMuted}>
-          Welcome. Pick the LLM backend you want to talk to. Local
-          providers (Ollama, LM Studio) need no key — cloud providers
-          do.
-        </Text>
+        {/* LOCALE-APPLY-SECTION */}
+        <Text color={textMuted}>{t('onboarding.welcome')}</Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
       <Box flexDirection="column" marginTop={1}>
         {CHOICES.map((c, i) => {
@@ -193,7 +199,10 @@ function BackendSelect({ onPick, onExit }: BackendSelectProps): React.JSX.Elemen
               </Text>
               {c.cloud && (
                 <Text color={textMuted}>
-                  {'  '}[needs API key]
+                  {'  '}
+                  {/* LOCALE-APPLY-SECTION */}
+                  {t('onboarding.needsApiKey')}
+                  {/* LOCALE-APPLY-SECTION-END */}
                 </Text>
               )}
             </Box>
@@ -201,7 +210,9 @@ function BackendSelect({ onPick, onExit }: BackendSelectProps): React.JSX.Elemen
         })}
       </Box>
       <Box marginTop={1}>
-        <Text color={textMuted}>↑/↓ navigate · Enter to select · Esc to exit</Text>
+        {/* LOCALE-APPLY-SECTION */}
+        <Text color={textMuted}>{t('onboarding.navHint')}</Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
     </Box>
   );
@@ -223,6 +234,9 @@ function UrlInput({
   onBack,
 }: UrlInputProps): React.JSX.Element {
   const [draft, setDraft] = useState<string>(defaultUrl);
+  // LOCALE-APPLY-SECTION
+  const { t } = useT();
+  // LOCALE-APPLY-SECTION-END
 
   useInput(
     useCallback(
@@ -236,12 +250,14 @@ function UrlInput({
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <Text bold>{theme.logo}</Text>
+      {/* LOCALE-APPLY-SECTION */}
       <Text color={textMuted}>
-        Selected: {PROVIDER_META[backend].displayName}
+        {t('onboarding.selected', { name: PROVIDER_META[backend].displayName })}
       </Text>
       <Box marginTop={1}>
-        <Text color={noxPalette.white}>Server URL:</Text>
+        <Text color={noxPalette.white}>{t('onboarding.serverUrl')}</Text>
       </Box>
+      {/* LOCALE-APPLY-SECTION-END */}
       <Box>
         <Text>{theme.prompt} </Text>
         <TextInput
@@ -257,9 +273,13 @@ function UrlInput({
         </Box>
       )}
       <Box marginTop={1}>
+        {/* LOCALE-APPLY-SECTION */}
         <Text color={textMuted}>
-          Enter to confirm · Esc to go back · Current: {draft.length === 0 ? defaultUrl : draft}
+          {t('onboarding.urlFooter', {
+            value: draft.length === 0 ? defaultUrl : draft,
+          })}
         </Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
     </Box>
   );
@@ -293,6 +313,9 @@ function ApiKeyInput({
   onBack,
 }: ApiKeyInputProps): React.JSX.Element {
   const [draft, setDraft] = useState<string>('');
+  // LOCALE-APPLY-SECTION
+  const { t } = useT();
+  // LOCALE-APPLY-SECTION-END
 
   useInput(
     useCallback(
@@ -310,22 +333,25 @@ function ApiKeyInput({
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <Text bold>{theme.logo}</Text>
+      {/* LOCALE-APPLY-SECTION */}
       <Text color={textMuted}>
-        Selected: {meta.displayName}
+        {t('onboarding.selected', { name: meta.displayName })}
       </Text>
       <Box marginTop={1}>
         <Text color={noxPalette.white}>
-          API key{isCustom ? ' (optional)' : ''}:
+          {isCustom
+            ? t('onboarding.apiKeyOptional')
+            : t('onboarding.apiKey')}
         </Text>
       </Box>
       {envKeyDetected && envVar !== undefined && (
         <Box>
           <Text color="#86efac">
-            ✓ Detected ${envVar} in env — press Enter on an empty field
-            to use it.
+            {t('onboarding.envDetected', { name: envVar })}
           </Text>
         </Box>
       )}
+      {/* LOCALE-APPLY-SECTION-END */}
       <Box>
         <Text>{theme.prompt} </Text>
         <TextInput
@@ -352,10 +378,9 @@ function ApiKeyInput({
       )}
       {required && !envKeyDetected && (
         <Box>
-          <Text color={noxPalette.yellow}>
-            Warning: terminal may not mask the key while typing —
-            clear scrollback after pasting if pasting from a clipboard.
-          </Text>
+          {/* LOCALE-APPLY-SECTION */}
+          <Text color={noxPalette.yellow}>{t('onboarding.keyWarning')}</Text>
+          {/* LOCALE-APPLY-SECTION-END */}
         </Box>
       )}
       {lastError !== null && (
@@ -364,10 +389,13 @@ function ApiKeyInput({
         </Box>
       )}
       <Box marginTop={1}>
+        {/* LOCALE-APPLY-SECTION */}
         <Text color={textMuted}>
-          Enter to confirm · Esc to go back
-          {envKeyDetected || isCustom ? ' · empty Enter = skip' : ''}
+          {envKeyDetected || isCustom
+            ? t('onboarding.apiKeyFooterSkip')
+            : t('onboarding.apiKeyFooter')}
         </Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
     </Box>
   );
@@ -379,6 +407,9 @@ interface ScanningProps {
 
 function Scanning({ url }: ScanningProps): React.JSX.Element {
   const [frame, setFrame] = useState<number>(0);
+  // LOCALE-APPLY-SECTION
+  const { t } = useT();
+  // LOCALE-APPLY-SECTION-END
   useEffect(() => {
     const h = setInterval(() => setFrame((f) => (f + 1) % spinnerFrames.length), 80);
     return () => clearInterval(h);
@@ -390,7 +421,9 @@ function Scanning({ url }: ScanningProps): React.JSX.Element {
       <Box marginTop={1}>
         <Text color={noxPalette.yellow}>{glyph}</Text>
         <Text> </Text>
-        <Text color={noxPalette.white}>Scanning models at {url}…</Text>
+        {/* LOCALE-APPLY-SECTION */}
+        <Text color={noxPalette.white}>{t('onboarding.scanning', { url })}</Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
     </Box>
   );
@@ -411,6 +444,9 @@ function Done({
   selectedModel,
   onConfirm,
 }: DoneProps): React.JSX.Element {
+  // LOCALE-APPLY-SECTION
+  const { t } = useT();
+  // LOCALE-APPLY-SECTION-END
   useInput(
     useCallback(
       (_input: string, key: { return?: boolean }) => {
@@ -424,16 +460,22 @@ function Done({
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <Text bold>{theme.logo}</Text>
       <Box marginTop={1}>
+        {/* LOCALE-APPLY-SECTION */}
         <Text color="green">
-          ✓ Connected to {PROVIDER_META[backend].displayName}
+          {t('onboarding.connected', { name: PROVIDER_META[backend].displayName })}
         </Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
       <Text color={textMuted}>{baseUrl}</Text>
       <Box marginTop={1} flexDirection="column">
-        <Text color={noxPalette.white}>Available models ({models.length}):</Text>
+        {/* LOCALE-APPLY-SECTION */}
+        <Text color={noxPalette.white}>
+          {t('onboarding.availableModels', { n: models.length })}
+        </Text>
         {models.length === 0 ? (
           <Text color={noxPalette.yellow}>
-            {'  '}(none found — you may need to pull a model first)
+            {'  '}
+            {t('onboarding.noModels')}
           </Text>
         ) : (
           models.slice(0, 10).map((m) => (
@@ -446,11 +488,17 @@ function Done({
           ))
         )}
         {models.length > 10 && (
-          <Text color={textMuted}>{`  …and ${models.length - 10} more`}</Text>
+          <Text color={textMuted}>
+            {'  '}
+            {t('onboarding.moreModels', { n: models.length - 10 })}
+          </Text>
         )}
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
       <Box marginTop={1}>
-        <Text color={textMuted}>Press Enter to start chatting.</Text>
+        {/* LOCALE-APPLY-SECTION */}
+        <Text color={textMuted}>{t('onboarding.pressEnter')}</Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
     </Box>
   );
@@ -462,6 +510,11 @@ function OnboardingScreen({
   fetchModels,
 }: OnboardingScreenProps): React.JSX.Element {
   const { exit } = useApp();
+  // LOCALE-APPLY-SECTION — error strings produced inside `runScan` flow
+  // through the active locale; UI surfaces (UrlInput, ApiKeyInput) render
+  // them as raw `lastError` text.
+  const { t } = useT();
+  // LOCALE-APPLY-SECTION-END
   const [step, setStep] = useState<Step>('backendSelect');
   const [backend, setBackend] = useState<Backend>('ollama');
   const [baseUrl, setBaseUrl] = useState<string>(PROVIDER_DEFAULTS.ollama.baseUrl);
@@ -508,9 +561,9 @@ function OnboardingScreen({
       try {
         const reachable = await pingBackend(url);
         if (!reachable) {
-          setError(
-            `Could not reach ${url}. Is the server running / does the URL look right?`,
-          );
+          // LOCALE-APPLY-SECTION
+          setError(t('onboarding.cantReach', { url }));
+          // LOCALE-APPLY-SECTION-END
           // Cloud → return to API key step; local → URL step. Errors
           // typically point at one or the other depending on category.
           if (PROVIDER_DEFAULTS[backend].requiresApiKey) {
@@ -522,19 +575,21 @@ function OnboardingScreen({
         }
         const fetched = await fetchModels(url);
         if (fetched.length === 0) {
+          // LOCALE-APPLY-SECTION
           let hint = '';
           if (backend === 'ollama') {
-            hint = 'Try: `ollama pull qwen2.5-coder`.';
+            hint = t('onboarding.noModelsHint.ollama');
           } else if (backend === 'lmstudio') {
-            hint = 'Load a model in LM Studio first.';
+            hint = t('onboarding.noModelsHint.lmstudio');
           } else if (backend === 'custom') {
-            hint = 'Custom endpoint returned no /v1/models — check the URL.';
+            hint = t('onboarding.noModelsHint.custom');
           } else {
-            hint = `Check that your API key has access to ${PROVIDER_META[backend].displayName} models.`;
+            hint = t('onboarding.noModelsHint.cloud', {
+              name: PROVIDER_META[backend].displayName,
+            });
           }
-          setError(
-            `Server is reachable but returned no models. ${hint}`,
-          );
+          setError(t('onboarding.serverReachableNoModels', { hint }));
+          // LOCALE-APPLY-SECTION-END
           setStep(
             PROVIDER_DEFAULTS[backend].requiresApiKey ? 'apiKeyInput' : 'urlInput',
           );
@@ -553,13 +608,15 @@ function OnboardingScreen({
         setStep('done');
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        setError(`Scan failed: ${msg}`);
+        // LOCALE-APPLY-SECTION
+        setError(t('onboarding.scanFailed', { msg }));
+        // LOCALE-APPLY-SECTION-END
         setStep(
           PROVIDER_DEFAULTS[backend].requiresApiKey ? 'apiKeyInput' : 'urlInput',
         );
       }
     },
-    [backend, pingBackend, fetchModels],
+    [backend, pingBackend, fetchModels, t],
   );
 
   const handleApiKeySubmit = useCallback(
@@ -571,17 +628,24 @@ function OnboardingScreen({
         const resolved = resolveApiKey(backend, key.length > 0 ? key : undefined);
         if (resolved === undefined || resolved.length === 0) {
           const meta = PROVIDER_META[backend];
+          // LOCALE-APPLY-SECTION
           const envHint =
             meta.apiKeyEnvVar !== undefined
-              ? ` (or set $${meta.apiKeyEnvVar} in your shell)`
+              ? t('onboarding.apiKeyEnvHint', { var: meta.apiKeyEnvVar })
               : '';
-          setError(`API key required for ${meta.displayName}${envHint}.`);
+          setError(
+            t('onboarding.apiKeyRequired', {
+              name: meta.displayName,
+              envHint,
+            }),
+          );
+          // LOCALE-APPLY-SECTION-END
           return;
         }
       }
       void runScan(baseUrl, key);
     },
-    [backend, baseUrl, runScan],
+    [backend, baseUrl, runScan, t],
   );
 
   const handleApiKeySkip = useCallback(() => {

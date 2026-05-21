@@ -1,0 +1,184 @@
+{
+  "id": "rec-localcode-quick-tour-v1",
+  "sessionId": "sess-demo-quick-tour",
+  "startedAt": 1700000000000,
+  "endedAt": 1700000090000,
+  "entries": [
+    {
+      "kind": "system",
+      "content": "Welcome to the LocalCode quick tour! Watch how a typical session unfolds.",
+      "ts": 1700000000000
+    },
+    {
+      "kind": "system",
+      "content": "Tip: this is a recorded demo. No real model is being called — every line is replayed at the original pace.",
+      "ts": 1700000001000
+    },
+    {
+      "kind": "user",
+      "content": "Hi! Can you help me understand this project?",
+      "ts": 1700000003000
+    },
+    {
+      "kind": "assistant",
+      "content": "Of course. Let me start by reading the project README to get oriented.",
+      "ts": 1700000005000
+    },
+    {
+      "kind": "tool_call",
+      "name": "read_file",
+      "args": { "path": "README.md" },
+      "result": "# LocalCode\n\nA local-first AI pair programmer. Bring your own LLM (Ollama, LM Studio, OpenAI, Anthropic, OpenRouter, Google, custom).\n\n- 30+ tools (read_file, edit_file, run_command, lint_file, ...)\n- Multi-agent orchestration\n- Project memory + skills\n- TUI + Web UI\n",
+      "ts": 1700000007000
+    },
+    {
+      "kind": "assistant",
+      "content": "This is LocalCode — a local-first AI pair programmer with a rich tool set, multi-agent support, and both a TUI and Web UI. Let me peek at the source layout next.",
+      "ts": 1700000011000
+    },
+    {
+      "kind": "tool_call",
+      "name": "list_dir",
+      "args": { "path": "src" },
+      "result": "agents/\nbrowser/\nllm/\ntools/\nui/\ncommands/\nconfig/\nsessions/\napp.tsx\ncli.tsx\n",
+      "ts": 1700000013000
+    },
+    {
+      "kind": "assistant",
+      "content": "The composition root is `src/app.tsx`. Want me to lint a specific file to show how the diagnostics flow works?",
+      "ts": 1700000017000
+    },
+    {
+      "kind": "user",
+      "content": "Yes — try linting src/cli.tsx.",
+      "ts": 1700000019000
+    },
+    {
+      "kind": "tool_call",
+      "name": "lint_file",
+      "args": { "path": "src/cli.tsx" },
+      "result": "✓ No lint errors. (typescript: 0 issues, eslint: 0 issues)",
+      "ts": 1700000021000
+    },
+    {
+      "kind": "assistant",
+      "content": "Clean. The lint result feeds back into the next turn automatically — I'd surface any error before continuing.",
+      "ts": 1700000024000
+    },
+    {
+      "kind": "system",
+      "content": "Demo note: this is the auto-lint loop in action — every successful write_file / edit_file commit re-runs the linter and feeds diagnostics back to the model.",
+      "ts": 1700000026000
+    },
+    {
+      "kind": "user",
+      "content": "Cool. Show me how to delegate to a sub-agent.",
+      "ts": 1700000028000
+    },
+    {
+      "kind": "assistant",
+      "content": "Spawning a focused debugger sub-agent on an isolated git worktree. The lead session keeps control while the worker investigates in parallel.",
+      "ts": 1700000030000
+    },
+    {
+      "kind": "tool_call",
+      "name": "spawn_agent",
+      "args": { "role": "debugger", "task": "Trace the recent test failure in chat-state" },
+      "result": "agent-7d2a spawned (worktree: /tmp/lc-fork-7d2a, model: deepseek-coder, status: running)",
+      "ts": 1700000032000
+    },
+    {
+      "kind": "system",
+      "content": "Sub-agent agent-7d2a is now investigating in the background. The lead can keep working — results stream back when the worker is done.",
+      "ts": 1700000035000
+    },
+    {
+      "kind": "assistant",
+      "content": "While the worker runs, let me check git for any pending changes.",
+      "ts": 1700000037000
+    },
+    {
+      "kind": "tool_call",
+      "name": "run_command",
+      "args": { "command": "git status --short" },
+      "result": " M src/llm/adapter.ts\n?? notes/triage.md",
+      "ts": 1700000039000
+    },
+    {
+      "kind": "assistant",
+      "content": "Two pending changes. Let's see the diff with the built-in viewer.",
+      "ts": 1700000041000
+    },
+    {
+      "kind": "system",
+      "content": "User invoked: /diff",
+      "ts": 1700000043000
+    },
+    {
+      "kind": "tool_call",
+      "name": "diff",
+      "args": { "scope": "HEAD" },
+      "result": "diff --git a/src/llm/adapter.ts b/src/llm/adapter.ts\n@@ -42,7 +42,7 @@\n- const stallMs = opts.stallTimeoutMs ?? 30_000;\n+ const stallMs = opts.stallTimeoutMs ?? 60_000;\n",
+      "ts": 1700000045000
+    },
+    {
+      "kind": "assistant",
+      "content": "The diff viewer is a full-screen overlay in the real TUI — syntax-highlighted, scrollable, and never blocks the chat history.",
+      "ts": 1700000049000
+    },
+    {
+      "kind": "system",
+      "content": "agent-7d2a finished: 'Root cause: stall-timeout default raised in adapter.ts; integration test still pins the old value. Patch suggested.'",
+      "ts": 1700000053000
+    },
+    {
+      "kind": "assistant",
+      "content": "The sub-agent traced the test failure to the stall-timeout default change. I can apply the suggested patch with edit_file — preview first, then commit on approval.",
+      "ts": 1700000056000
+    },
+    {
+      "kind": "user",
+      "content": "Go for it.",
+      "ts": 1700000059000
+    },
+    {
+      "kind": "tool_call",
+      "name": "edit_file",
+      "args": { "path": "tests/llm/adapter-stall.test.ts", "old": "expect(stallMs).toBe(30000)", "new": "expect(stallMs).toBe(60000)" },
+      "result": "✓ Edited tests/llm/adapter-stall.test.ts (1 line). Auto-lint: clean.",
+      "ts": 1700000063000
+    },
+    {
+      "kind": "assistant",
+      "content": "Patch applied and the linter is happy. Let's re-run the test to confirm.",
+      "ts": 1700000066000
+    },
+    {
+      "kind": "tool_call",
+      "name": "run_command",
+      "args": { "command": "bun test tests/llm/adapter-stall.test.ts" },
+      "result": "✓ 3 pass, 0 fail. Done in 142ms.",
+      "ts": 1700000069000
+    },
+    {
+      "kind": "assistant",
+      "content": "Green. The two-phase tool execution (preview → approval → commit) keeps every destructive change auditable.",
+      "ts": 1700000073000
+    },
+    {
+      "kind": "system",
+      "content": "Demo note: try /memory to save important context, /spawn for specialists, /usage to see token cost, /perf for streaming sparklines.",
+      "ts": 1700000076000
+    },
+    {
+      "kind": "assistant",
+      "content": "That's the tour: read, lint, spawn, diff, edit, test — all in a single session, with every step persisted to SQLite and replayable. Have fun!",
+      "ts": 1700000080000
+    },
+    {
+      "kind": "system",
+      "content": "That's LocalCode. Have fun!",
+      "ts": 1700000083000
+    }
+  ]
+}

@@ -66,7 +66,7 @@ const DEFAULT_WEB_PORT = 7777;
 
 // Keep in sync with package.json `version` field. CI test
 // `tests/cli/version-sync.test.ts` (TODO) will guard the drift.
-const PKG_VERSION = '0.20.0';
+const PKG_VERSION = '0.21.0';
 
 /**
  * R8 (Agent 8) — pre-mount model refresh budget. The cli does a fast,
@@ -123,6 +123,13 @@ Subcommands:
   plugin <action>             Manage plugins (install / uninstall / list /
                               enable / disable). Run \`localcode plugin --help\`
                               for the full subcommand reference.
+  demo                        Replay a short bundled tour that demonstrates
+                              what LocalCode can do. No flags.
+  doctor [--json]             Diagnose installation health (config, backend,
+                              models, disk, hooks, MCP servers, git).
+                              Exits 0 on success, 1 if any check fails.
+  completion <shell>          Print a completion script for the named shell
+                              (bash | zsh | fish) to stdout.
 
 Examples:
   localcode                   # open the current directory
@@ -478,6 +485,38 @@ async function main(): Promise<void> {
     process.exit(exitCode);
   }
 
+  // DEMO-SUBCOMMAND-SECTION — `localcode demo` replays the bundled
+  // quick-tour recording to stdout and exits. Mirrors the in-session
+  // `/demo` slash command but runs without mounting ink so it works in
+  // pipes / CI / first-impression manual demos.
+  if (rawArgs[0] === 'demo') {
+    const { runDemo } = await import('@/cli/demo');
+    const exitCode = await runDemo();
+    process.exit(exitCode);
+  }
+  // DEMO-SUBCOMMAND-SECTION-END
+
+  // DOCTOR-COMPLETION-SECTION — pure stdout sub-CLIs that never mount
+  // ink. `localcode doctor` runs the install-health diagnostic and
+  // exits with status 0 on success or 1 on any failed check. The
+  // `--json` flag emits a structured payload for scripts. `localcode
+  // completion <shell>` prints a shell-completion script. Both
+  // intentionally short-circuit BEFORE the main flag parser so a
+  // misformed positional doesn't surprise the user with a TUI bootstrap.
+  if (rawArgs[0] === 'doctor') {
+    const { runDoctorCli } = await import('@/cli/doctor');
+    const exitCode = await runDoctorCli(rawArgs.slice(1), {
+      currentVersion: PKG_VERSION,
+    });
+    process.exit(exitCode);
+  }
+  if (rawArgs[0] === 'completion') {
+    const { runCompletionCli } = await import('@/cli/completion');
+    const exitCode = await runCompletionCli(rawArgs.slice(1));
+    process.exit(exitCode);
+  }
+  // DOCTOR-COMPLETION-SECTION-END
+
   // UPDATER-BOOT-SECTION
   // `localcode update <action>` — auto-update sub-CLI. Pure stdout,
   // exits without launching ink. See src/cli/update-cli.ts. Apply-on-
@@ -633,8 +672,17 @@ async function main(): Promise<void> {
     configExists = false;
   }
 
-  const startScreen: 'onboarding' | 'chat' =
-    !configExists || parsed.reconfigure ? 'onboarding' : 'chat';
+  // SPLASH-MOUNT-SECTION — first-impression animated splash.
+  // Shown ONCE on the very first launch (no `~/.localcode/config.toml`
+  // on disk). `--reconfigure` skips it because the user has already
+  // seen LocalCode at least once. After splash the App transitions
+  // through `languagePicker → onboarding → chat` like before.
+  const startScreen: 'splash' | 'onboarding' | 'chat' = !configExists
+    ? parsed.reconfigure
+      ? 'onboarding'
+      : 'splash'
+    : 'chat';
+  // SPLASH-MOUNT-SECTION-END
 
   // R8 (Agent 8) — pre-mount silent model refresh. Only when we're
   // heading STRAIGHT into the chat screen (config exists, not
