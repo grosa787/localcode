@@ -1,0 +1,130 @@
+.wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-2) 0;
+  background: linear-gradient(
+    180deg,
+    rgba(122, 92, 255, 0.04) 0%,
+    transparent 100%
+  );
+  border-radius: var(--r-md);
+}
+
+.svg {
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.connectors {
+  fill: none;
+}
+
+.edge {
+  stroke-width: 1.6;
+  stroke-opacity: 0.55;
+  fill: none;
+  stroke-dasharray: 280;
+  stroke-dashoffset: 0;
+  animation: drawEdge 600ms ease-out both;
+}
+
+.edgeFaded {
+  stroke-opacity: 0.18;
+  stroke-dasharray: 4 4;
+}
+
+.nodeGroup {
+  animation: nodeFade 220ms ease-out;
+  transform-origin: center;
+}
+
+.fadedGroup {
+  opacity: 0.4;
+}
+
+.node {
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.32));
+  transition: fill 220ms ease;
+}
+
+.haloLead {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-opacity: 0.45;
+  animation: pulseHalo 2.4s ease-in-out infinite;
+}
+
+.nodeLabel {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  fill: #fff;
+  pointer-events: none;
+  letter-spacing: 0.02em;
+}
+
+.cap {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  fill: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.queueHint {
+  font-size: 9px;
+  font-style: italic;
+  fill: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+
+.emptyHint {
+  font-size: 12px;
+  fill: var(--text-muted);
+}
+
+@keyframes drawEdge {
+  from {
+    stroke-dashoffset: 280;
+    opacity: 0;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes nodeFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseHalo {
+  0%, 100% {
+    stroke-opacity: 0.18;
+    stroke-width: 1.2;
+  }
+  50% {
+    stroke-opacity: 0.55;
+    stroke-width: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge,
+  .nodeGroup,
+  .haloLead {
+    animation: none !important;
+    stroke-dashoffset: 0;
+  }
+}

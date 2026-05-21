@@ -1,0 +1,111 @@
+.root {
+  position: relative;
+  width: 100%;
+}
+
+.svg {
+  width: 100%;
+  height: 200px;
+  display: block;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-faint);
+  font-size: var(--fs-13);
+  background: var(--bg-elevated);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.axis {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+
+.label {
+  fill: var(--text-faint);
+  font-size: 10px;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.barIn {
+  fill: var(--accent-primary);
+  opacity: 0.85;
+  transition: opacity var(--motion-hover);
+}
+
+.barOut {
+  fill: var(--accent-secondary, #6e9bff);
+  opacity: 0.85;
+  transition: opacity var(--motion-hover);
+}
+
+.barEmpty {
+  fill: var(--border-subtle);
+}
+
+.barIn:hover,
+.barOut:hover {
+  opacity: 1;
+}
+
+.tooltip {
+  position: absolute;
+  transform: translate(-50%, -110%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  font-size: var(--fs-12);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.tooltipDate {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.tooltipRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-secondary);
+}
+
+.legend {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatchIn,
+.swatchOut {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.swatchIn {
+  background: var(--accent-primary);
+}
+
+.swatchOut {
+  background: var(--accent-secondary, #6e9bff);
+}

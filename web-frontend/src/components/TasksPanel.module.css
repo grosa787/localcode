@@ -1,0 +1,157 @@
+/* TasksPanel — floating right-side task tracker panel */
+
+.panel {
+  position: fixed;
+  top: 3.5rem; /* below ProjectBar */
+  right: 0;
+  width: 280px;
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  background: var(--color-surface-2);
+  border-left: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  border-bottom-left-radius: var(--radius-md, 6px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8125rem;
+  box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* Header ---------------------------------------------------------------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-1);
+  flex-shrink: 0;
+}
+
+.title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+.summary {
+  display: flex;
+  gap: 0.4rem;
+  flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.summaryDone {
+  font-size: 0.75rem;
+  color: var(--color-success, #4ade80);
+}
+
+.summaryActive {
+  font-size: 0.75rem;
+  color: var(--color-accent, #818cf8);
+}
+
+.summaryPending {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm, 3px);
+  flex-shrink: 0;
+}
+
+.closeBtn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-3);
+}
+
+/* Body ------------------------------------------------------------------ */
+
+.body {
+  padding: 0.5rem 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.empty {
+  padding: 0.75rem 1rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.listItem {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.listItem:last-child {
+  border-bottom: none;
+}
+
+/* Todo rows ------------------------------------------------------------- */
+
+.todoRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  padding: 0.4375rem 0.75rem;
+  line-height: 1.4;
+}
+
+.statusIcon {
+  flex-shrink: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.todoIndex {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.todoContent {
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+/* Status-specific colouring */
+
+.statusPending .statusIcon {
+  color: var(--color-text-muted);
+}
+
+.statusInProgress .statusIcon {
+  color: var(--color-accent, #818cf8);
+}
+
+.statusInProgress .todoContent {
+  color: var(--color-accent, #818cf8);
+}
+
+.statusCompleted .statusIcon {
+  color: var(--color-success, #4ade80);
+}
+
+.completed {
+  text-decoration: line-through;
+  color: var(--color-text-muted);
+}

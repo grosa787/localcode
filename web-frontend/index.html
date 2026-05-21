@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LocalCode</title>
+  <!-- RESPONSIVE-VIEWPORT-SECTION
+       Stamp `data-viewport` on <html> BEFORE the SPA mounts so CSS
+       selectors like `[data-viewport='mobile']` apply on first paint
+       (no FOUC). The values MUST match VIEWPORT_BREAKPOINTS in
+       src/util/use-viewport.ts. -->
+  <script>
+    (function () {
+      try {
+        var w = window.innerWidth;
+        var bp = w < 768 ? 'mobile'
+               : w < 1024 ? 'tablet'
+               : w < 1440 ? 'desktop'
+               : 'wide';
+        document.documentElement.setAttribute('data-viewport', bp);
+      } catch (e) {
+        document.documentElement.setAttribute('data-viewport', 'desktop');
+      }
+    })();
+  </script>
+  <!-- /RESPONSIVE-VIEWPORT-SECTION -->
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

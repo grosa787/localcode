@@ -1,0 +1,62 @@
+.root {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-app);
+  min-height: 32px;
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.segment {
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.segment:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.segment:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+.last {
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: default;
+}
+
+.last:hover {
+  background: transparent;
+}
+
+.sep {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+}

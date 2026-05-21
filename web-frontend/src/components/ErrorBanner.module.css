@@ -1,0 +1,73 @@
+/**
+ * ErrorBanner — error banner shown when the most recent streamed turn
+ * surfaced an error. Mirrors QueueErrorBanner's structure but uses the
+ * danger token (red accent) instead of warning (orange) so the two
+ * banners are visually distinct when both appear.
+ */
+
+.root {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--danger, var(--warning));
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger, var(--warning));
+  flex-shrink: 0;
+}
+
+.message {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prefix {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.detail {
+  color: var(--text-secondary);
+}
+
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--sp-2);
+  background: transparent;
+  color: var(--accent-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--bg-hover, transparent);
+}
+
+.buttonMuted {
+  color: var(--text-muted);
+}

@@ -1,0 +1,115 @@
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-app);
+  overflow: hidden;
+}
+
+.scroller {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+
+.scroller > * {
+  max-width: 880px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroller { scroll-behavior: auto; }
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: var(--sp-6);
+}
+
+.hydrating {
+  text-align: center;
+  padding: var(--sp-5);
+  color: var(--text-muted);
+  font-size: var(--fs-12);
+}
+
+/* "Load more" — reveals an earlier window of messages above the
+ * current visible slice. Sits centered above the first rendered row
+ * inside the scroller, so it inherits the scroller's max-width
+ * constraint via the `.scroller > *` selector. */
+.loadMore {
+  display: block;
+  margin: var(--sp-2) auto;
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover), border-color var(--motion-hover);
+}
+
+.loadMore:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.loadMore:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadMore {
+    transition: none;
+  }
+}
+
+/* Variable-height spacers used by the virtualization windowing logic.
+ * They occupy the geometric footprint of unmounted rows so the
+ * scrollbar position and total scrollHeight stay correct while the
+ * actual DOM only holds rows inside the active window. */
+.spacer {
+  width: 1px;
+  margin: 0 auto;
+  pointer-events: none;
+}
+
+/* The ThinkingIndicator sits inside the scroller, below the last row.
+ * It already includes its own 16px left indent to align with assistant
+ * messages; the scroller's max-width: 880px rule applies via the
+ * `.scroller > *` selector above. */
+
+/* ---------- RESPONSIVE-SECTION ---------- */
+
+/* Mobile: tighten horizontal padding inside the scroller so the
+ * 880px max-width rule still wins on desktop but content gets every
+ * available pixel on a phone. The flex layout above means the chat
+ * already takes 100% of the remaining width (sidebar overlays on
+ * mobile), so nothing else needs to change for "full width". */
+.root[data-viewport='mobile'] .scroller {
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+}
+
+.root[data-viewport='mobile'] .scroller > * {
+  max-width: 100%;
+}
+
+/* Tablet: keep the centred max-width but trim padding slightly. */
+.root[data-viewport='tablet'] .scroller {
+  padding: var(--sp-3) var(--sp-3) var(--sp-4);
+}
+
+/* /RESPONSIVE-SECTION */

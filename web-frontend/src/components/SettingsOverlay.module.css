@@ -1,0 +1,241 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 4, 20, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fade var(--motion-overlay) ease-out;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 92vw);
+  max-height: min(80vh, 720px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding: var(--sp-4);
+  overflow-y: auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--text-primary);
+}
+
+.kv dt {
+  color: var(--text-muted);
+}
+
+.kv dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+
+.hint {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  color: var(--text-muted);
+}
+
+.empty {
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--text-muted);
+}
+
+.cmds {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.cmds li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
+  font-size: var(--fs-14);
+}
+
+.cmd {
+  flex-shrink: 0;
+  min-width: 120px;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-active);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: var(--fs-12);
+}
+
+.cmdDesc {
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.fieldLabel {
+  font-size: var(--fs-14);
+  color: var(--text-muted);
+}
+
+.input {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: var(--fs-14);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  color: var(--text-primary);
+  background: var(--bg-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  outline: none;
+  transition: border-color var(--motion-hover);
+}
+
+.input:focus {
+  border-color: var(--accent, #7a5cff);
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.btnPrimary,
+.btnSecondary {
+  padding: 6px 14px;
+  font-size: var(--fs-14);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-default);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.btnPrimary {
+  background: var(--accent, #7a5cff);
+  color: #fff;
+  border-color: transparent;
+}
+
+.btnPrimary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.btnSecondary {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btnPrimary:disabled,
+.btnSecondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop { animation: none; }
+}

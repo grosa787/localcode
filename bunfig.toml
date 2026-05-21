@@ -1,0 +1,8 @@
+[test]
+preload = ["./tests/setup.ts"]
+# Frontend tests run under vitest (jsdom + React Testing Library); they
+# are not Bun-test-compatible. Without this, `bun test` auto-discovers
+# `web-frontend/src/__tests__/*.test.{ts,tsx}` and fails on `document
+# is not defined`. See AGENTS_LOG entry [Agent T] for context.
+root = "."
+pathIgnorePatterns = ["**/web-frontend/**"]

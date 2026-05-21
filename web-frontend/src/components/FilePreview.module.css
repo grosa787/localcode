@@ -1,0 +1,129 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-app);
+  border-left: 1px solid var(--border-subtle);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+
+.headerLeft {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.filename {
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: var(--fs-13);
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  font-size: var(--fs-11, 11px);
+  color: var(--text-muted);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.iconBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.iconBtn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+.body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: var(--sp-3);
+  min-height: 0;
+}
+
+.loading,
+.error {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+}
+
+.error {
+  color: var(--danger);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}
+
+.imageWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.image {
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 1px var(--border-subtle);
+  object-fit: contain;
+}
+
+.imageMeta {
+  font-size: var(--fs-11, 11px);
+  color: var(--text-muted);
+}

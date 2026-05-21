@@ -1,0 +1,60 @@
+.handle {
+  position: relative;
+  flex: 0 0 auto;
+  background: transparent;
+  transition: background-color var(--motion-hover);
+  touch-action: none;
+  user-select: none;
+}
+
+.handle:hover,
+.handle:focus-visible,
+.active {
+  background: var(--accent-soft);
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--accent-edge);
+  outline-offset: -2px;
+}
+
+.horizontal {
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.vertical {
+  width: 100%;
+  height: 4px;
+  cursor: row-resize;
+}
+
+/* The handle's visible spine — a 1px highlight in the middle to make the
+ * 4px hit region readable without making the gutter chunky. */
+.handle::after {
+  content: '';
+  position: absolute;
+  background: var(--border-default);
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.horizontal::after {
+  top: 0;
+  bottom: 0;
+  left: 1.5px;
+  width: 1px;
+}
+
+.vertical::after {
+  left: 0;
+  right: 0;
+  top: 1.5px;
+  height: 1px;
+}
+
+.active::after {
+  background: var(--accent-primary);
+  opacity: 1;
+}

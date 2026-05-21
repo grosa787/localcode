@@ -1,0 +1,73 @@
+/* InlineDiff — Nox-tinted unified diff. */
+
+.root {
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.path {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  border-bottom: 1px solid var(--border-subtle);
+  user-select: none;
+}
+
+.body {
+  overflow-x: auto;
+  padding: var(--sp-1) 0;
+}
+
+.lineContext,
+.lineAdd,
+.lineRemove {
+  display: flex;
+  align-items: stretch;
+  padding-left: var(--sp-2);
+  padding-right: var(--sp-2);
+  white-space: pre;
+  min-height: 22px;
+}
+
+.lineAdd {
+  background: rgba(134, 239, 172, 0.10);
+  color: #86efac;
+}
+
+.lineRemove {
+  background: rgba(252, 165, 165, 0.10);
+  color: #fca5a5;
+}
+
+.lineContext {
+  color: var(--text-secondary);
+}
+
+.gutter {
+  display: inline-block;
+  text-align: right;
+  padding: 0 var(--sp-2);
+  color: var(--text-faint);
+  user-select: none;
+  flex: 0 0 auto;
+}
+
+.sign {
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+  user-select: none;
+  flex: 0 0 auto;
+}
+
+.text {
+  flex: 1 1 auto;
+  white-space: pre;
+}

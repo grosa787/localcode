@@ -1,0 +1,63 @@
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  min-width: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--r-md, 8px);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    background var(--motion-hover),
+    color var(--motion-hover),
+    border-color var(--motion-hover);
+}
+
+.btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong, var(--text-faint));
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.label {
+  font-variant-numeric: tabular-nums;
+  /* Subtle gradient hint that this is "live" — the active letter glows
+     a touch when hovered, similar to ThemeToggle's icon swap. */
+  transition: transform var(--motion-hover);
+}
+
+.btn:hover .label {
+  transform: translateY(-0.5px);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width 160ms ease,
+    opacity 160ms ease;
+}
+
+.btn:hover .icon,
+.btn:focus-visible .icon {
+  width: 14px;
+  opacity: 1;
+}

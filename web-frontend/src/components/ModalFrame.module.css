@@ -1,0 +1,25 @@
+/**
+ * ModalFrame — polished surface that layers on top of the shared
+ * <Modal> primitive's CSS. The base Modal already provides backdrop,
+ * scale-in, and reduced-motion handling; this module adds a slightly
+ * larger comfort radius and softer shadow so the new exclusive-overlay
+ * host feels more deliberate.
+ *
+ * Tokens consumed:
+ *   --r-md   — base radius (overridden inline to 16px via a wrapper)
+ *   --sp-*   — spacing scale
+ *   --bg-*   — surfaces
+ *   --text-* — typography
+ */
+
+.body {
+  /* Body inherits flex+scroll from Modal.module.css .body. Override
+   * padding so polished frame breathes a little more. */
+  padding: var(--sp-5, 20px) var(--sp-5, 20px);
+  gap: var(--sp-4, 16px);
+}
+
+.footer {
+  /* Slightly heavier gap between action buttons in the polished frame. */
+  gap: var(--sp-3, 12px);
+}

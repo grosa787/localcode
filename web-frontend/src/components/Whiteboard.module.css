@@ -1,0 +1,109 @@
+/* Whiteboard — full-bleed inside the right-dock body. */
+
+.container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  background: var(--bg-base, #0a0a0a);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-faint, rgba(255, 255, 255, 0.08));
+  background: var(--bg-elev, rgba(255, 255, 255, 0.02));
+  flex: 0 0 auto;
+  min-height: 36px;
+}
+
+.toolbarGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbarBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-default, #e5e5e5);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toolbarBtn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  border-color: var(--border-faint, rgba(255, 255, 255, 0.08));
+}
+
+.toolbarBtn:focus-visible {
+  outline: 2px solid var(--focus-ring, #4c8bf5);
+  outline-offset: 1px;
+}
+
+.toolbarBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sendBtn {
+  composes: toolbarBtn;
+  background: var(--accent-bg, rgba(76, 139, 245, 0.12));
+  border-color: var(--accent-border, rgba(76, 139, 245, 0.4));
+  color: var(--accent-text, #9fc1ff);
+}
+
+.sendBtn:hover:enabled {
+  background: var(--accent-bg-strong, rgba(76, 139, 245, 0.2));
+}
+
+.canvas {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+  width: 100%;
+  /* tldraw uses CSS variables; container provides isolation. */
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.canvas :global(.tl-container) {
+  position: absolute;
+  inset: 0;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted, #8a8a8a);
+  font-size: 12px;
+  background: var(--bg-base, #0a0a0a);
+  pointer-events: none;
+}
+
+.error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  color: var(--danger-text, #ff8585);
+  font-size: 12px;
+  text-align: center;
+  background: var(--bg-base, #0a0a0a);
+}

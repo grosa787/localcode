@@ -1,0 +1,187 @@
+.panel {
+  position: fixed;
+  top: 64px;
+  bottom: 80px;
+  right: var(--sp-3);
+  width: 420px;
+  max-width: calc(100vw - var(--sp-3) * 2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 40;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+}
+
+.url {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.status {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 16px;
+  flex-shrink: 0;
+}
+
+.statusReady {
+  background: rgba(40, 160, 80, 0.18);
+  color: var(--success, #4ade80);
+}
+
+.statusBusy {
+  background: rgba(180, 130, 0, 0.18);
+  color: var(--warning, #facc15);
+}
+
+.statusError {
+  background: rgba(200, 40, 40, 0.18);
+  color: var(--danger, #f87171);
+}
+
+.statusIdle {
+  background: var(--bg-hover);
+  color: var(--text-faint);
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.canvasWrap {
+  position: relative;
+  width: 100%;
+  background: #111;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+  cursor: crosshair;
+}
+
+.canvas:focus {
+  outline: 1px solid var(--accent-primary);
+  outline-offset: -1px;
+}
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--sp-3);
+  color: var(--text-faint);
+  font-size: var(--fs-12);
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.02),
+    rgba(255, 255, 255, 0.02) 8px,
+    rgba(255, 255, 255, 0.04) 8px,
+    rgba(255, 255, 255, 0.04) 16px
+  );
+}
+
+.hint code {
+  background: var(--bg-hover);
+  padding: 1px 4px;
+  border-radius: var(--r-sm);
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.errorText {
+  color: var(--danger);
+}
+
+.cursor {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  left: 0;
+  top: 0;
+  z-index: 2;
+}
+
+.ripple {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-primary);
+  transform: translate(-50%, -50%) scale(0.4);
+  opacity: 0.9;
+  pointer-events: none;
+  animation: rippleAnim 360ms ease-out forwards;
+  z-index: 3;
+}
+
+@keyframes rippleAnim {
+  to {
+    transform: translate(-50%, -50%) scale(1.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ripple {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+.logWrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-app);
+}

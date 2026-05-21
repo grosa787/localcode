@@ -1,0 +1,233 @@
+.dock {
+  display: flex;
+  flex-direction: column;
+  width: var(--right-dock-width, 320px);
+  height: 100%;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-subtle);
+  min-width: 220px;
+  max-width: 600px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.dock.collapsed {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+}
+
+.strip {
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+  padding: 4px 4px 0 4px;
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  min-width: 0;
+  transition: background-color var(--motion-hover);
+}
+
+.collapsed .strip {
+  flex-direction: column;
+  height: auto;
+  width: 100%;
+  padding: 4px;
+  border-bottom: 0;
+  border-right: 1px solid var(--border-subtle);
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.scroller {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  position: relative;
+  scroll-behavior: smooth;
+}
+
+.collapsed .scroller {
+  flex-direction: column;
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* tier-1: comfortable — labels render naturally, no scroll needed. */
+.strip[data-tier='comfortable'] .scroller {
+  overflow-x: hidden;
+}
+
+/* tier-2: cramped — enable horizontal scroll + thin scrollbar. */
+.strip[data-tier='cramped'] .scroller {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+}
+.strip[data-tier='cramped'] .scroller::-webkit-scrollbar {
+  height: 4px;
+}
+.strip[data-tier='cramped'] .scroller::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+.strip[data-tier='cramped'] .scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* tier-3: icon — strictly icons, no scroll (everything fits). */
+.strip[data-tier='icon'] .scroller {
+  overflow-x: hidden;
+}
+
+/* Edge fades (only meaningful in cramped tier). */
+.scroller.fadeLeft::before,
+.scroller.fadeRight::after {
+  content: '';
+  position: sticky;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  pointer-events: none;
+  z-index: 1;
+  flex-shrink: 0;
+  transition: opacity var(--motion-hover);
+}
+.scroller.fadeLeft::before {
+  left: 0;
+  margin-right: -12px;
+  background: linear-gradient(to right, var(--bg-app), transparent);
+}
+.scroller.fadeRight::after {
+  right: 0;
+  margin-left: -12px;
+  background: linear-gradient(to left, var(--bg-app), transparent);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2);
+  height: 28px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  font-size: var(--fs-14);
+  cursor: pointer;
+  transition: background-color var(--motion-hover), color var(--motion-hover),
+    padding var(--motion-hover);
+  border-bottom: 2px solid transparent;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.collapsed .tab,
+.strip[data-tier='icon'] .tab {
+  border-radius: var(--r-sm);
+  width: 36px;
+  height: 36px;
+  justify-content: center;
+  padding: 0;
+}
+
+.collapsed .tab {
+  border-bottom: 0;
+  border-left: 2px solid transparent;
+}
+
+/* In cramped tier, tabs may shrink (label truncates via ellipsis). */
+.strip[data-tier='cramped'] .tab {
+  flex-shrink: 1;
+  min-width: 32px;
+  max-width: 140px;
+}
+.strip[data-tier='cramped'] .tab:not(.tabActive) {
+  opacity: 0.85;
+}
+
+.tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+.tabActive {
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  border-bottom-color: var(--accent-primary);
+  opacity: 1;
+}
+
+.collapsed .tabActive,
+.strip[data-tier='icon'] .tabActive {
+  border-bottom: 0;
+  border-left-color: var(--accent-primary);
+}
+
+.tabIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.tabLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.strip[data-tier='comfortable'] .tabLabel {
+  max-width: none;
+}
+
+.strip[data-tier='cramped'] .tabLabel {
+  max-width: 100%;
+  flex: 1 1 auto;
+}
+
+.collapseBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background-color var(--motion-hover), color var(--motion-hover);
+  flex-shrink: 0;
+}
+
+.collapseBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.placeholder {
+  padding: var(--sp-5);
+  color: var(--text-muted);
+  font-size: var(--fs-14);
+  text-align: center;
+}

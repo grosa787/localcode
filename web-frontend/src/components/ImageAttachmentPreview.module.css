@@ -1,0 +1,81 @@
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--sp-2) 0;
+}
+
+.chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 4px;
+  flex: 0 0 auto;
+  width: 72px;
+}
+
+.thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  display: block;
+  background: var(--bg-app);
+}
+
+.remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-app);
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    background var(--motion-hover),
+    color var(--motion-hover),
+    border-color var(--motion-hover),
+    transform var(--motion-active);
+}
+
+.remove:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.remove:active {
+  transform: scale(0.9);
+}
+
+.remove:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.meta {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text-faint);
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  text-align: center;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

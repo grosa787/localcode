@@ -1,0 +1,194 @@
+/**
+ * SessionSearchOverlay — cross-session FTS search dialog.
+ * Shares the Modal primitive's chrome; this file only styles the
+ * search-specific content (input row, scope toggle, result rows).
+ */
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+}
+
+.search {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-14);
+  background: var(--bg-app);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--motion-hover), box-shadow var(--motion-hover);
+}
+
+.search:focus-visible {
+  border-color: var(--accent-primary);
+  box-shadow: var(--accent-glow);
+}
+
+.scopeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+}
+
+.scopeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 4px var(--sp-2);
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-12);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition:
+    background var(--motion-hover),
+    color var(--motion-hover),
+    border-color var(--motion-hover);
+}
+
+.scopeBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.scopeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scopeBtnActive {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.resultsArea {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+  max-height: 480px;
+  overflow-y: auto;
+  margin-top: var(--sp-1);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.item:hover,
+.item:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.row1 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
+
+.role {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-app);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
+}
+
+.timestamp {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  flex: 0 0 auto;
+}
+
+.project {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.snippet {
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+  line-height: var(--lh-14);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.snippet mark {
+  background: rgba(255, 209, 102, 0.28);
+  color: var(--text-primary);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  color: var(--text-muted);
+  font-size: var(--fs-13);
+  text-align: center;
+}
+
+.error {
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  background: rgba(252, 165, 165, 0.08);
+  border: 1px solid rgba(252, 165, 165, 0.28);
+  color: var(--danger);
+  font-size: var(--fs-13);
+}
+
+.footer {
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+  flex: 1;
+}

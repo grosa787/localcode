@@ -1,0 +1,155 @@
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--sp-2);
+  border: none;
+  background: transparent;
+  text-align: left;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.header:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.header:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+.active .header .label {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.chev {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.folder {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.pulseDot {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning, #f59e0b);
+  animation: projectRowPulse 1.4s ease-in-out infinite;
+}
+
+.kebab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--motion-hover), color var(--motion-hover),
+    background var(--motion-hover);
+}
+
+.header:hover .kebab,
+.header:focus-within .kebab,
+.kebab[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.kebab:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
+
+.menu {
+  position: absolute;
+  top: 30px;
+  right: var(--sp-2);
+  z-index: 50;
+  min-width: 180px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--sp-2);
+  border: none;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.menuItem:hover {
+  background: var(--bg-hover);
+}
+
+.menuItemDanger {
+  color: var(--danger);
+}
+
+.menuItemDanger:hover {
+  background: var(--bg-hover);
+  color: var(--danger);
+}
+
+@keyframes projectRowPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.85); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulseDot { animation: none; opacity: 1; }
+}

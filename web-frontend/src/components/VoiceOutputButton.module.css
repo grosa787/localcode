@@ -1,0 +1,44 @@
+/* VoiceOutputButton — small inline TTS controls. */
+
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition:
+    background var(--motion-hover, 120ms ease),
+    color var(--motion-hover, 120ms ease),
+    border-color var(--motion-hover, 120ms ease);
+}
+
+.button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.row[data-state='speaking'] .button:first-child,
+.row[data-state='paused'] .button:first-child {
+  color: var(--accent-primary);
+  border-color: var(--accent-edge);
+  background: var(--accent-soft);
+}

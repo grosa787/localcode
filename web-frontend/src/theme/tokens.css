@@ -1,0 +1,120 @@
+:root {
+  /* Surfaces — deep ink with faint plum undertone, NOT violet */
+  --bg-app: #0e0a14;
+  --bg-sidebar: #15111c;
+  --bg-elevated: #1c1726;
+  --bg-hover: #241d31;
+  --bg-active: #2c2440;
+
+  /* Borders — cool, hairline */
+  --border-subtle: rgba(139, 92, 246, 0.08);
+  --border-default: rgba(139, 92, 246, 0.16);
+  --border-strong: rgba(168, 85, 247, 0.28);
+
+  /* Text — warm white primary, cool grey muted (differentiates from accent) */
+  --text-primary: #f0eaff;
+  --text-secondary: #b9b3c7;
+  --text-muted: #8a8499;
+  --text-faint: #5a5468;
+
+  /* Accent — vivid, used sparingly */
+  --accent-primary: #a855f7;
+  --accent-hover: #b366ff;
+  --accent-pressed: #7c3aed;
+  --accent-soft: rgba(168, 85, 247, 0.12);
+  --accent-edge: rgba(139, 92, 246, 0.22);
+  --accent-glow: 0 0 0 2px rgba(168, 85, 247, 0.18);
+
+  /* Semantic */
+  --success: #86efac;
+  --warning: #fbbf24;
+  --danger: #fca5a5;
+  --info: #c084fc;
+
+  /* User bubble — refined, not shouty */
+  --bubble-user-bg: #2a1d4a;
+  --bubble-user-text: #f0eaff;
+  --bubble-user-border: rgba(168, 85, 247, 0.22);
+
+  /* Spacing — 4px base */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-8: 48px;
+
+  /* Radii — tighter, tooly */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 16px;
+
+  /* Type scale — denser */
+  --fs-12: 11px;
+  --fs-14: 13px;
+  --fs-16: 14px;
+  --fs-18: 16px;
+  --lh-12: 15px;
+  --lh-14: 20px;
+  --lh-16: 21px;
+  --lh-18: 22px;
+
+  /* Motion */
+  --motion-hover: 140ms ease-out;
+  --motion-overlay: 180ms ease-out;
+  --motion-active: 120ms ease-out;
+}
+
+/* Light theme — applied when <html data-theme="light"> is set.
+ * Only color-bearing tokens are overridden. Spacing, radii, type, and
+ * motion remain shared. Primary text contrast on --bg-app is ~14.6:1
+ * (#1a1424 on #fafaf9), well above WCAG AA 4.5:1. The accent
+ * (#7c3aed) on white sits at ~6.4:1 for AA-compliant interactive text. */
+:root[data-theme='light'] {
+  /* Surfaces */
+  --bg-app: #fafaf9;
+  --bg-sidebar: #f4f2f7;
+  --bg-elevated: #ffffff;
+  --bg-hover: rgba(124, 58, 237, 0.06);
+  --bg-active: rgba(124, 58, 237, 0.12);
+
+  /* Borders */
+  --border-subtle: rgba(26, 20, 36, 0.06);
+  --border-default: rgba(26, 20, 36, 0.12);
+  --border-strong: rgba(124, 58, 237, 0.32);
+
+  /* Text */
+  --text-primary: #1a1424;
+  --text-secondary: #443958;
+  --text-muted: #6b6478;
+  --text-faint: #8e879a;
+
+  /* Accent — slightly darker than dark theme for AA on white */
+  --accent-primary: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-pressed: #5b21b6;
+  --accent-soft: rgba(124, 58, 237, 0.12);
+  --accent-edge: rgba(124, 58, 237, 0.28);
+  --accent-glow: 0 0 0 2px rgba(124, 58, 237, 0.24);
+
+  /* Semantic — darkened for 4.5:1 on near-white */
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b91c1c;
+  --info: #6d28d9;
+
+  /* User bubble */
+  --bubble-user-bg: #ede4ff;
+  --bubble-user-text: #1a1424;
+  --bubble-user-border: rgba(124, 58, 237, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-hover: 0ms linear;
+    --motion-overlay: 0ms linear;
+    --motion-active: 0ms linear;
+  }
+}

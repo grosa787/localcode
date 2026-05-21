@@ -1,0 +1,251 @@
+/* AssistantMessage — full column, left accent, no bubble. */
+
+.root {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  padding: var(--sp-4) var(--sp-5) var(--sp-4) var(--sp-5);
+  gap: var(--sp-3);
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.accent {
+  flex: 0 0 auto;
+  width: 2px;
+  height: 8px;
+  margin-top: 9px; /* aligns with first-line cap height of 14px text */
+  background: var(--accent-primary);
+  border-radius: 1px;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.model {
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-1);
+  user-select: none;
+}
+
+.markdown {
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  color: var(--text-primary);
+}
+
+/* Markdown defaults — scoped through the .markdown class so they can't
+   leak out into the rest of the SPA. */
+
+.markdown :global(.md-paragraph) {
+  margin: 0 0 var(--sp-3) 0;
+}
+
+.markdown :global(.md-paragraph:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown :global(.md-heading) {
+  margin: var(--sp-4) 0 var(--sp-2) 0;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown :global(.md-heading-1) { font-size: var(--fs-18); line-height: var(--lh-18); }
+.markdown :global(.md-heading-2) { font-size: 16px; line-height: 24px; }
+.markdown :global(.md-heading-3) { font-size: var(--fs-14); line-height: var(--lh-14); }
+.markdown :global(.md-heading-4),
+.markdown :global(.md-heading-5),
+.markdown :global(.md-heading-6) {
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  color: var(--text-secondary);
+}
+
+.markdown :global(.md-list) {
+  margin: 0 0 var(--sp-3) 0;
+  padding-left: var(--sp-5);
+}
+
+.markdown :global(.md-list-item) {
+  margin: var(--sp-1) 0;
+}
+
+.markdown :global(.md-blockquote) {
+  margin: 0 0 var(--sp-3) 0;
+  padding: var(--sp-1) var(--sp-3);
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.markdown :global(.md-hr) {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: var(--sp-4) 0;
+}
+
+.markdown :global(.md-inline-code) {
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12.5px;
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.markdown :global(.md-link) {
+  color: var(--info);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--motion-hover);
+}
+
+.markdown :global(.md-link:hover) {
+  border-bottom-color: var(--info);
+}
+
+.markdown :global(.md-link:focus-visible) {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* GFM tables.
+
+   Tables are wrapped in `.md-table-wrap` so wide tables can scroll
+   horizontally without forcing the parent column to grow. The outer
+   wrap also carries the rounded border so cells can use square edges.
+   Cells receive a `data-align` attribute (`left|center|right`) computed
+   from the GFM separator line. */
+.markdown :global(.md-table-wrap) {
+  margin: 0 0 var(--sp-3) 0;
+  overflow-x: auto;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+}
+
+.markdown :global(.md-table) {
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+}
+
+.markdown :global(.md-table th),
+.markdown :global(.md-table td) {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-default);
+  vertical-align: top;
+  text-align: left;
+}
+
+.markdown :global(.md-table th) {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.markdown :global(.md-table tbody tr:nth-child(even) td) {
+  background: color-mix(in srgb, var(--bg-hover) 50%, transparent);
+}
+
+.markdown :global(.md-table th[data-align='center']),
+.markdown :global(.md-table td[data-align='center']) {
+  text-align: center;
+}
+
+.markdown :global(.md-table th[data-align='right']),
+.markdown :global(.md-table td[data-align='right']) {
+  text-align: right;
+}
+
+.markdown :global(.md-table th[data-align='left']),
+.markdown :global(.md-table td[data-align='left']) {
+  text-align: left;
+}
+
+/* Trim outer borders so the rounded wrap shows through cleanly. */
+.markdown :global(.md-table tr:first-child th) {
+  border-top: none;
+}
+.markdown :global(.md-table tr:last-child td) {
+  border-bottom: none;
+}
+.markdown :global(.md-table th:first-child),
+.markdown :global(.md-table td:first-child) {
+  border-left: none;
+}
+.markdown :global(.md-table th:last-child),
+.markdown :global(.md-table td:last-child) {
+  border-right: none;
+}
+
+.placeholder {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  height: 22px;
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.dot:nth-child(2) { animation-delay: 0.18s; }
+.dot:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot { animation: none; opacity: 0.6; }
+}
+
+.caret {
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--accent-primary);
+  border-radius: 1px;
+  animation: blink 1s steps(2) infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret { animation: none; opacity: 0.7; }
+}
+
+/* MESSAGE-COST-CHIP-SECTION — single-line telemetry footer under the
+   assistant body. Tokens-only theme so it never competes with the
+   primary content; the bullet separator (·) keeps fields visually
+   distinct. Falls back to default text when a theme token is missing. */
+.costChip {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+/* MESSAGE-COST-CHIP-SECTION-END */

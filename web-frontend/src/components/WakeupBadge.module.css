@@ -1,0 +1,72 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 24px;
+  padding: 0 var(--sp-2);
+  background: color-mix(in srgb, var(--accent-primary) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 40%, var(--border-subtle));
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  font-size: var(--fs-11);
+  cursor: default;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 260px;
+  max-width: 360px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2);
+  box-shadow: var(--shadow-popover);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--motion-hover);
+}
+
+.wrap:hover .tooltip {
+  opacity: 1;
+}
+
+.tooltipRow {
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tooltipRow:last-child {
+  border-bottom: 0;
+}
+
+.tooltipReason {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.tooltipPrompt {
+  color: var(--text-muted);
+  font-size: var(--fs-11);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tooltipMeta {
+  color: var(--text-muted);
+  font-size: var(--fs-11);
+}

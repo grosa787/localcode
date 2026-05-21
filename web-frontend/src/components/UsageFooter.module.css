@@ -1,0 +1,67 @@
+/* UsageFooter — thin caption strip at the very bottom of the chat
+ * surface, below the Composer. Single line, height 18-20px so it
+ * tucks under the composer without competing for visual weight.
+ *
+ * Right-aligned by default; the segments themselves are tucked
+ * against the right edge with `margin-left: auto` on the leading
+ * segment, leaving the rest of the strip empty for breathing room.
+ */
+
+.root {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3, 12px);
+  height: 20px;
+  line-height: 20px;
+  padding: 0 var(--sp-5, 24px);
+  font-size: var(--fs-12, 11px);
+  color: var(--text-faint, #5a5468);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  background: var(--bg-app);
+  /* No border-top — it sits flush below the Composer (which already has
+   * its own border-top). Adds visual lightness vs. the previous strip. */
+  flex: 0 0 auto;
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sep {
+  color: var(--border-default, rgba(0, 0, 0, 0.16));
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* Cached / fresh dots — small coloured pip in front of the number. */
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 6px;
+}
+
+.dotCached {
+  background: var(--success, #2da44e);
+}
+
+.dotFresh {
+  background: var(--warning, #fbbf24);
+  opacity: 0.65;
+}
+
+.cached {
+  color: var(--success, #2da44e);
+  font-weight: 500;
+}
+
+.creation {
+  color: var(--warning, #bf8700);
+}

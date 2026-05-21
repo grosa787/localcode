@@ -1,0 +1,33 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  height: 56px;
+  justify-content: center;
+}
+
+.line {
+  height: 10px;
+  border-radius: var(--r-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-hover) 0%,
+    var(--bg-elevated) 50%,
+    var(--bg-hover) 100%
+  );
+  background-size: 200% 100%;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.lineTitle { width: 70%; }
+.lineSub { width: 40%; height: 8px; }
+
+@keyframes pulse {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .line { animation: none; }
+}

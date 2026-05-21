@@ -1,0 +1,61 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--warning-soft, var(--bg-hover));
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  position: sticky;
+  top: 0;
+  z-index: 11;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--warning, var(--text-muted));
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+.message {
+  flex: 1;
+  color: var(--text-secondary);
+}
+
+.retry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  background: transparent;
+  color: var(--accent-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover), border-color var(--motion-hover);
+}
+
+.retry:hover {
+  background: var(--bg-hover);
+  color: var(--accent-hover);
+  border-color: var(--accent-primary);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}

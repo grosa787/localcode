@@ -1,0 +1,96 @@
+.wrap {
+  position: relative;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  cursor: pointer;
+  transition: background var(--motion-hover), border-color var(--motion-hover),
+    color var(--motion-hover);
+}
+
+.chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.label {
+  font-weight: 500;
+}
+
+/* POPOVER-FLIP-SECTION — top / bottom / left / right come from
+ * usePopoverPosition's inline style; we keep the visual styling
+ * here. */
+.menu {
+  position: absolute;
+  z-index: 50;
+  min-width: 240px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: var(--sp-1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: var(--shadow-popover, 0 12px 24px rgba(0, 0, 0, 0.32));
+  animation: popoverFlipFade 140ms ease-out;
+}
+
+@keyframes popoverFlipFade {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu { animation: none; }
+}
+/* /POPOVER-FLIP-SECTION */
+
+.option {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  text-align: left;
+  font-size: var(--fs-12);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+}
+
+.option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.optionActive {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+}
+
+.optionHint {
+  display: block;
+  font-size: var(--fs-11);
+  color: var(--text-muted);
+  margin-top: 2px;
+}

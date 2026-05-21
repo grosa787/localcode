@@ -1,0 +1,39 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.zone {
+  position: absolute;
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent-edge);
+  opacity: 0;
+  transition: opacity var(--motion-overlay);
+}
+
+.zoneActive {
+  opacity: 1;
+}
+
+.zoneLeft {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 80px;
+}
+
+.zoneRight {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 80px;
+}
+
+.zoneBottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 80px;
+}

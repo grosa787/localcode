@@ -1,0 +1,32 @@
+.root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  border: 2px dashed var(--accent-primary);
+  z-index: 100;
+  pointer-events: none;
+  animation: fadeIn 120ms ease-out;
+}
+
+.caption {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--accent-edge);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-5);
+  font-size: var(--fs-16);
+  line-height: var(--lh-16);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root { animation: none; }
+}

@@ -1,0 +1,208 @@
+.root {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  left: 0;
+  z-index: 200;
+  width: 320px;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+  animation: pop var(--motion-overlay);
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root { animation: none; }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.closeBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.closeBtn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+.list {
+  margin: 0;
+  padding: var(--sp-1) 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.row:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+.row:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.providerIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.name {
+  flex: 1 1 auto;
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.dot {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dotGreen { background: var(--success); box-shadow: 0 0 6px rgba(134, 239, 172, 0.4); }
+.dotRed   { background: var(--danger);  box-shadow: 0 0 6px rgba(252, 165, 165, 0.4); }
+
+.keyRow {
+  display: flex;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3) var(--sp-2) var(--sp-3);
+}
+
+.keyInput {
+  flex: 1 1 auto;
+  height: 28px;
+  padding: 0 var(--sp-2);
+  background: var(--bg-app);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  outline: none;
+  transition: border-color var(--motion-hover);
+}
+
+.keyInput:focus {
+  border-color: var(--accent-primary);
+}
+
+.keySubmit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 var(--sp-3);
+  background: var(--accent-primary);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.keySubmit:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.keySubmit:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.keySubmit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.errorBanner {
+  padding: var(--sp-2) var(--sp-3);
+  background: rgba(252, 165, 165, 0.08);
+  color: var(--danger);
+  font-size: var(--fs-12);
+  border-top: 1px solid rgba(252, 165, 165, 0.2);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}

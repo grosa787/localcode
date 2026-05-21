@@ -1,0 +1,126 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  overflow-y: auto;
+}
+
+.intro {
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--text-secondary);
+  line-height: var(--lh-14);
+}
+
+.empty {
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--text-muted);
+  padding: var(--sp-4) 0;
+  text-align: center;
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+  line-height: var(--lh-12);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.row {
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.rowHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-12);
+}
+
+.badge {
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: var(--fs-12);
+}
+
+.badgeBlocking {
+  background: rgba(255, 99, 99, 0.15);
+  color: #ff8d8d;
+}
+
+.badgeNonBlocking {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.pattern {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  color: var(--text-secondary);
+}
+
+.timeout {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--fs-12);
+}
+
+.command {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  background: var(--bg-sidebar);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.description {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.example {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  background: var(--bg-sidebar);
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
+  white-space: pre;
+  overflow-x: auto;
+}

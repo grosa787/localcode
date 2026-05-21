@@ -1,0 +1,114 @@
+.root {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  left: 0;
+  z-index: 200;
+  width: 320px;
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+  animation: pop var(--motion-overlay);
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root { animation: none; }
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.search {
+  flex: 1 1 auto;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  font-family:
+    'Inter', -apple-system, 'SF Pro Text', system-ui, sans-serif;
+}
+
+.search::placeholder {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.list {
+  margin: 0;
+  padding: var(--sp-1) 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-14);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.item .name {
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.highlighted {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 2px;
+  height: 18px;
+  background: var(--accent-primary);
+  border-radius: 1px;
+}
+
+.item {
+  position: relative;
+}
+
+.emptyWrap {
+  padding: var(--sp-3);
+}

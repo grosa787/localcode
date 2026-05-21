@@ -1,0 +1,30 @@
+{
+  "id": "hello-plugin",
+  "name": "Hello Plugin",
+  "version": "0.1.0",
+  "description": "Minimal hello-world plugin used by registry / loader tests.",
+  "author": "LocalCode Tests",
+  "license": "MIT",
+  "sdkVersion": 1,
+  "entry": "./index.mjs",
+  "capabilities": {
+    "tools": [
+      {
+        "name": "hello",
+        "description": "Return a greeting.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      }
+    ],
+    "commands": [
+      {
+        "name": "hello",
+        "description": "Print a friendly greeting.",
+        "args": ""
+      }
+    ]
+  }
+}

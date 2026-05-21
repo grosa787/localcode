@@ -1,0 +1,28 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.warn {
+  background: color-mix(in srgb, var(--accent-warn, #d18b3a) 18%, transparent);
+  color: var(--accent-warn, #d18b3a);
+}
+
+.danger {
+  background: color-mix(in srgb, var(--accent-danger, #d14a3a) 22%, transparent);
+  color: var(--accent-danger, #d14a3a);
+}
+
+.label {
+  font-weight: 600;
+}
+
+.detail {
+  color: inherit;
+  opacity: 0.9;
+}

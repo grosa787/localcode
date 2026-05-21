@@ -1,0 +1,50 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.bell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  position: relative;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.bell:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.bellActive {
+  color: var(--warning);
+}
+
+.bellActive:hover {
+  color: var(--warning);
+}
+
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--danger);
+  color: var(--bg-app);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}

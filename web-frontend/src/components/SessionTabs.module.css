@@ -1,0 +1,115 @@
+.bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 34px;
+  padding: 4px 4px 0 4px;
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.bar::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 2px;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 100px;
+  max-width: 200px;
+  height: 30px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 2px solid transparent;
+  transition: background-color var(--motion-hover), color var(--motion-hover);
+  position: relative;
+}
+
+.tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tabActive {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+.tabActive:hover {
+  background: var(--accent-soft);
+}
+
+.tabTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unsavedDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--motion-hover), color var(--motion-hover);
+}
+
+.closeBtn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.newTab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 30px;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background-color var(--motion-hover), color var(--motion-hover);
+}
+
+.newTab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

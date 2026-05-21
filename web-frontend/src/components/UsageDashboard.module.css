@@ -1,0 +1,201 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.rangeGroup {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 2px;
+}
+
+.rangeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px var(--sp-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-13);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.rangeBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.rangeBtnActive {
+  background: var(--accent-primary);
+  color: var(--bg-app);
+}
+
+.rangeBtnActive:hover {
+  background: var(--accent-primary);
+  color: var(--bg-app);
+}
+
+.statRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+@media (max-width: 720px) {
+  .statRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.section {
+  margin-top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-elevated);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+
+.table th {
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+}
+
+.table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.colNum {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.model {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+
+.sessionBtn {
+  display: inline-block;
+  border: 0;
+  background: transparent;
+  color: var(--accent-primary);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionBtn:hover {
+  text-decoration: underline;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  color: var(--text-faint);
+  font-size: var(--fs-13);
+  background: var(--bg-elevated);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--sp-5) var(--sp-4);
+  gap: var(--sp-2);
+  color: var(--text-faint);
+}
+
+.emptyState h3 {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.emptyState p {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--text-muted);
+  max-width: 360px;
+}
+
+.error {
+  padding: var(--sp-2) var(--sp-3);
+  background: rgba(220, 60, 60, 0.08);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  color: var(--danger);
+  font-size: var(--fs-13);
+  margin-bottom: var(--sp-3);
+}

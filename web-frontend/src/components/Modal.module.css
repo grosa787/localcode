@@ -1,0 +1,167 @@
+/**
+ * Modal primitive — shared backdrop + centered dialog used by every
+ * overlay. CSS variables defined in tokens.css drive colors / radii.
+ */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 9, 31, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--sp-4);
+  /* Polished entrance: opacity fade only, 180ms ease-out (see scale on
+   * dialog for the per-card motion). */
+  animation: fade 180ms ease-out;
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: min(80vh, 720px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  box-shadow:
+    0 18px 56px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  outline: none;
+  /* Polished entrance: combined scale 0.96 → 1 + translateY 8px → 0 over
+   * 200ms with a slight overshoot easing curve. */
+  animation: scale 200ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+/* Size variants — used by overlays with different content density. */
+.sizeSm { width: min(420px, 100%); }
+.sizeMd { width: min(560px, 100%); }
+.sizeLg { width: min(720px, 100%); }
+.sizeXl { width: min(960px, 100%); }
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+  flex-shrink: 0;
+}
+
+.headIcon {
+  color: var(--accent-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.titleWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  color: var(--text-muted);
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.close:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+}
+
+.body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+  flex-shrink: 0;
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scale {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop, .dialog { animation: none; }
+}
+
+/* Responsive — collapse padding and let dialog use the full width below
+ * a narrow breakpoint so phone-sized viewports remain usable. */
+@media (max-width: 640px) {
+  .backdrop { padding: var(--sp-2); }
+  .dialog,
+  .sizeSm,
+  .sizeMd,
+  .sizeLg,
+  .sizeXl {
+    width: 100%;
+    max-height: min(92vh, 100dvh);
+  }
+}

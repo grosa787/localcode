@@ -1,0 +1,8 @@
+.fs-12 { font-size: var(--fs-12); line-height: var(--lh-12); }
+.fs-14 { font-size: var(--fs-14); line-height: var(--lh-14); }
+.fs-16 { font-size: var(--fs-16); line-height: var(--lh-16); }
+.fs-18 { font-size: var(--fs-18); line-height: var(--lh-18); }
+.font-mono { font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: 0; }
+.weight-400 { font-weight: 400; }
+.weight-500 { font-weight: 500; }
+.weight-600 { font-weight: 600; }

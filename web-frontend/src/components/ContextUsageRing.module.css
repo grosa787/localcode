@@ -1,0 +1,99 @@
+/* ContextUsageRing — 14px ring rendered inside ProjectBar's right
+ * cluster. Vertically centered with the icon buttons via a flex
+ * inline-flex wrapper. Cursor is `help`. The tooltip is custom (CSS
+ * `::after` driven by `data-tooltip`) — appears instantly on hover
+ * (the native `title` attribute has a 1.5s delay that users perceive
+ * as broken). */
+
+.root {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  cursor: help;
+  user-select: none;
+  vertical-align: middle;
+  position: relative;
+}
+
+.root::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-12);
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(20, 9, 31, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 1000;
+}
+
+.root::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--border-default);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  z-index: 1001;
+}
+
+.root:hover::after,
+.root:focus-visible::after,
+.root:hover::before,
+.root:focus-visible::before {
+  opacity: 1;
+  visibility: visible;
+}
+
+.svg {
+  display: block;
+  overflow: visible;
+}
+
+.track {
+  stroke: var(--border-subtle);
+}
+
+.arc {
+  /* Smooth ramp when the percent changes between turns. The ring sits
+   * in the project bar — animating dashoffset is GPU-friendly and
+   * avoids layout. */
+  transition: stroke-dashoffset 200ms ease, stroke 200ms ease;
+}
+
+.ok {
+  stroke: var(--success);
+}
+
+.warn {
+  stroke: var(--warning);
+}
+
+.danger {
+  stroke: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arc,
+  .root::after,
+  .root::before {
+    transition: none;
+  }
+}

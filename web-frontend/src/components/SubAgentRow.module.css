@@ -1,0 +1,94 @@
+.root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-2) 4px 28px;
+  margin-left: var(--sp-3);
+  min-height: 28px;
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  border-left: 1px dashed var(--border-subtle);
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.root::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 14px;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.root:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.staticRow {
+  cursor: default;
+  opacity: 0.92;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotRunning {
+  background: var(--accent-primary);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.dotDone {
+  background: var(--success, #4ade80);
+}
+
+.dotFailed {
+  background: var(--danger, #f87171);
+}
+
+.dotCancelled {
+  background: var(--text-faint);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dotRunning { animation: none; }
+}
+
+.modelBadge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.task {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}

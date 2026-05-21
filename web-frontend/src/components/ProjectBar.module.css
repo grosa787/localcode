@@ -1,0 +1,114 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-4);
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+}
+
+.folder {
+  border: none;
+  background: transparent;
+  padding: 0 var(--sp-1);
+  margin-left: calc(var(--sp-1) * -1);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font-size: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.folder:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sep {
+  color: var(--text-faint);
+  margin: 0 6px;
+}
+
+.session {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spacer { flex: 1; }
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.iconBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.iconBtnActive {
+  background: var(--bg-hover);
+  color: var(--accent-primary);
+}
+
+.iconBtn {
+  position: relative;
+}
+
+.iconBadge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent-primary);
+  color: var(--bg-app);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.tokens {
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  color: var(--text-faint);
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.tokensOk      { color: var(--success); }
+.tokensWarning { color: var(--warning); }
+.tokensDanger  { color: var(--danger); }

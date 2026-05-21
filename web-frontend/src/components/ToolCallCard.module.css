@@ -1,0 +1,190 @@
+/* ToolCallCard — collapsible card. */
+
+.root {
+  margin: var(--sp-2) auto;
+  max-width: 880px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  transition: border-color var(--motion-hover);
+}
+
+.root[data-status='error'] {
+  border-color: rgba(252, 165, 165, 0.32);
+}
+
+.root[data-status='running'] .headerIcon,
+.root[data-status='awaiting_approval'] .headerIcon {
+  color: var(--accent-primary);
+}
+
+.header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background var(--motion-hover);
+  min-height: 44px;
+}
+
+.header:hover {
+  background: var(--bg-hover);
+}
+
+.header:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+.headerIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary);
+  flex: 0 0 auto;
+}
+
+.name {
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: 0 0 auto;
+}
+
+.argsSummary {
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: var(--lh-12);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.spacer {
+  flex: 0 1 auto;
+  min-width: var(--sp-2);
+}
+
+.duration {
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.statusIcon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.root[data-status='error'] .statusIcon {
+  color: var(--danger);
+}
+
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}
+
+.body {
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-app);
+}
+
+.preview {
+  margin: 0;
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: 22px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.empty {
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.commandBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.cmdLabel {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cwd {
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cmd {
+  margin: var(--sp-1) 0 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-elevated);
+  border-radius: var(--r-sm);
+  font-family:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: 22px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.error {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-start;
+  padding: var(--sp-2) var(--sp-3);
+  background: rgba(252, 165, 165, 0.06);
+  border: 1px solid rgba(252, 165, 165, 0.20);
+  border-radius: var(--r-sm);
+  color: var(--danger);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+}

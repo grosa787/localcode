@@ -1,0 +1,117 @@
+.root {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-elevated);
+  border-left: 4px solid var(--danger);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14, 1.45);
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.body {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12, 1.5);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 4px var(--sp-3);
+  background: transparent;
+  color: var(--accent-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12, 1.4);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover), border-color var(--motion-hover);
+}
+
+.actionButton:hover {
+  background: var(--bg-hover);
+  color: var(--accent-hover);
+  border-color: var(--accent-primary);
+}
+
+.dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tooltip {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12, 1.5);
+  color: var(--text-secondary);
+}
+
+.tooltip code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--bg-elevated);
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--text-primary);
+}

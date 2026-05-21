@@ -1,0 +1,89 @@
+.stack {
+  position: fixed;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  z-index: 1000;
+  pointer-events: none;
+  max-width: 420px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  pointer-events: auto;
+  transition: opacity var(--motion-overlay), transform var(--motion-overlay);
+  animation: slide-in var(--motion-overlay) ease-out both;
+}
+
+.icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.iconInfo    { color: var(--info); }
+.iconSuccess { color: var(--success); }
+.iconWarning { color: var(--warning); }
+.iconError   { color: var(--danger); }
+
+.message {
+  flex: 1;
+  margin: 0;
+  word-break: break-word;
+  /* Keep very long messages bounded so they don't push the dismiss
+   * button out of view on narrow viewports. */
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.dismiss {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.dismiss:active { background: var(--bg-active); }
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}
+
+/* Phone: pin to the top edge and use most of the width so messages stay readable. */
+@media (max-width: 640px) {
+  .stack {
+    top: var(--sp-2);
+    right: var(--sp-2);
+    left: var(--sp-2);
+    max-width: none;
+  }
+  .toast {
+    padding: var(--sp-2) var(--sp-3);
+  }
+}

@@ -1,0 +1,46 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--motion-hover), color var(--motion-hover),
+    border-color var(--motion-hover), transform var(--motion-active);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn[data-active='true'] {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+  animation: voicePulse 1s ease-in-out infinite;
+}
+
+@keyframes voicePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(252, 165, 165, 0.50); }
+  50%      { box-shadow: 0 0 0 6px rgba(252, 165, 165, 0.10); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn[data-active='true'] { animation: none; }
+}

@@ -1,0 +1,143 @@
+.root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 var(--sp-3);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+}
+
+.summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.summary:hover .label {
+  color: var(--text-primary);
+}
+
+.icon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--motion-hover);
+}
+
+.clearBtn {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  padding: 0 var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-12);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: color var(--motion-hover), background var(--motion-hover);
+}
+
+.clearBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-app);
+}
+
+.dropdown {
+  position: absolute;
+  left: var(--sp-3);
+  right: var(--sp-3);
+  bottom: calc(100% + 4px);
+  z-index: 30;
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-1);
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md, 0 4px 14px rgba(0, 0, 0, 0.18));
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
+  cursor: default;
+}
+
+.row + .row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.row:hover {
+  background: var(--bg-app);
+}
+
+.rowIndex {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  line-height: var(--lh-tight, 1.4);
+}
+
+.rowPreview {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+  line-height: var(--lh-tight, 1.4);
+}
+
+.rowDeleteBtn {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  padding: 2px;
+  margin: -2px 0 0 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--motion-hover), background var(--motion-hover);
+}
+
+.rowDeleteBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-app);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clearBtn,
+  .rowDeleteBtn,
+  .label {
+    transition: none;
+  }
+}
