@@ -976,12 +976,31 @@ export function Composer(props: ComposerProps): JSX.Element {
       }
     }
 
+    // ESC-CANCEL-SECTION — start
+    // While streaming, Esc cancels the in-flight turn so the user can
+    // start a new one immediately. The slash / mention popups consume
+    // Escape ahead of this branch (returning early above), so we only
+    // reach here when no popup owns the keystroke. After the parent's
+    // `cancel_stream` ack the runtime flips streaming → false and is
+    // immediately reusable (X5 disconnect-recovery invariant).
+    if (e.key === 'Escape' && props.streaming) {
+      e.preventDefault();
+      if (props.onCancel !== undefined) props.onCancel();
+      return;
+    }
+    // ESC-CANCEL-SECTION — end
+
+    // SHIFT-ENTER-SECTION — start
     // Cmd/Ctrl+Enter or Enter (without shift) → send.
+    // Shift+Enter falls through to the browser's native textarea
+    // behaviour, which inserts a literal newline at the caret. We
+    // explicitly DO NOT preventDefault() here so the modifier is
+    // honoured; testing `!e.shiftKey` is what gates the submit.
     if (e.key === 'Enter' && !e.shiftKey) {
-      // Shift-Enter is the newline escape hatch.
       e.preventDefault();
       void submit();
     }
+    // SHIFT-ENTER-SECTION — end
   };
 
   const onCancelClick = (): void => {

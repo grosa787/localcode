@@ -66,7 +66,7 @@ const DEFAULT_WEB_PORT = 7777;
 
 // Keep in sync with package.json `version` field. CI test
 // `tests/cli/version-sync.test.ts` (TODO) will guard the drift.
-const PKG_VERSION = '0.19.0';
+const PKG_VERSION = '0.20.0';
 
 /**
  * R8 (Agent 8) — pre-mount model refresh budget. The cli does a fast,
@@ -477,6 +477,63 @@ async function main(): Promise<void> {
     const exitCode = await runDaemon(rawArgs.slice(1));
     process.exit(exitCode);
   }
+
+  // UPDATER-BOOT-SECTION
+  // `localcode update <action>` — auto-update sub-CLI. Pure stdout,
+  // exits without launching ink. See src/cli/update-cli.ts. Apply-on-
+  // restart is handled below in the standard boot flow (after arg
+  // parsing) so a `localcode update apply` invocation still works
+  // alongside an automatic restart-apply.
+  if (rawArgs[0] === 'update') {
+    const { runUpdateCli } = await import('@/cli/update-cli');
+    const exitCode = await runUpdateCli(rawArgs.slice(1), {
+      currentVersion: PKG_VERSION,
+    });
+    process.exit(exitCode);
+  }
+
+  // Apply-on-restart: if a previous run staged an update we apply it
+  // BEFORE parsing args + mounting ink, then re-exec the new binary
+  // with the same argv. Wrapped in try/catch so a corrupt manifest
+  // never blocks a normal boot — the failure is logged to stderr and
+  // we fall through to the regular startup.
+  try {
+    const { readPendingManifest, applyManifest, compareSemver } = await import('@/updater');
+    const pending = await readPendingManifest();
+    if (
+      pending !== null &&
+      compareSemver(pending.version, PKG_VERSION) === 1
+    ) {
+      const res = await applyManifest(pending);
+      if (res.ok) {
+        process.stderr.write(
+          `localcode: applied update v${PKG_VERSION} → v${pending.version}. Restarting…\n`,
+        );
+        // Re-exec the freshly-applied binary with the same argv. We
+        // spawn it (inheriting stdio) and exit so the user sees one
+        // contiguous session. Bun lacks a real `execve`; spawning +
+        // exiting preserves the parent shell's expectations.
+        const { spawn } = await import('node:child_process');
+        const child = spawn(
+          process.execPath,
+          [res.targetPath ?? process.argv[1] ?? '', ...process.argv.slice(2)],
+          { stdio: 'inherit', detached: false },
+        );
+        child.on('exit', (code) => {
+          process.exit(code ?? 0);
+        });
+        // Block here; the child's exit handler propagates the code.
+        await new Promise<never>(() => {});
+      } else {
+        process.stderr.write(
+          `localcode: update apply failed: ${res.error ?? 'unknown error'}. Continuing with current version.\n`,
+        );
+      }
+    }
+  } catch {
+    /* swallow — never block boot on the updater */
+  }
+  // UPDATER-BOOT-SECTION-END
 
   let parsed: ExtendedCliArgs | 'help' | 'version';
   try {

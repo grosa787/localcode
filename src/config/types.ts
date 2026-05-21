@@ -546,6 +546,48 @@ export const ComposerSettingsSchema = z
 export type ComposerSettings = z.infer<typeof ComposerSettingsSchema>;
 // COMPOSER-CONFIG-SECTION-END ---------------------------------------
 
+// UPDATER-CONFIG-SECTION --------------------------------------------
+//
+// Auto-update settings. Drives the GitHub-Releases-based updater that
+// runs alongside the TUI / web server. All fields default to "safe
+// background behaviour": enabled, stable channel, 6h interval,
+// auto-download on. Users opt out via `[updater] enabled = false` in
+// `~/.localcode/config.toml` or `localcode update disable`.
+//
+//   - `enabled`              — master switch. When false, ZERO network
+//                              activity from the updater module.
+//   - `channel`              — `stable` follows `releases/latest`;
+//                              `beta` follows the most recent
+//                              prerelease tag. (`beta` falls back to
+//                              the latest stable when no prerelease is
+//                              published.)
+//   - `checkIntervalHours`   — repeating interval between checks.
+//                              Range 1..168. Default 6h.
+//   - `autoDownload`         — when true (default) the scheduler
+//                              fetches the tarball in the background
+//                              the moment a newer version is detected.
+//                              When false, the UI surfaces the notice
+//                              but waits for `/update apply` to
+//                              download + apply on demand.
+//
+// Whole section is optional at the root so old TOMLs round-trip cleanly.
+export const UpdaterConfigSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    channel: z.enum(['stable', 'beta']).default('stable'),
+    checkIntervalHours: z.number().int().min(1).max(168).default(6),
+    autoDownload: z.boolean().default(true),
+  })
+  .default({
+    enabled: true,
+    channel: 'stable',
+    checkIntervalHours: 6,
+    autoDownload: true,
+  });
+
+export type UpdaterConfig = z.infer<typeof UpdaterConfigSchema>;
+// UPDATER-CONFIG-SECTION-END ----------------------------------------
+
 // OUTPUT-STYLE-SECTION ----------------------------------------------
 //
 // Top-level "output style" that shapes how the model narrates its
@@ -563,6 +605,21 @@ export type ComposerSettings = z.infer<typeof ComposerSettingsSchema>;
 export const OutputStyleSchema = z.enum(['concise', 'explanatory', 'verbose']);
 export type OutputStyle = z.infer<typeof OutputStyleSchema>;
 // OUTPUT-STYLE-SECTION-END ------------------------------------------
+
+// LOCALE-CONFIG-SECTION ---------------------------------------------
+//
+// User-facing UI language. Drives:
+//   - TUI strings (where the UI renders translated copy).
+//   - Web UI translation table selection.
+//   - Default thinking-phrase locale.
+//
+// Top-level (NOT nested) so a `/language` slash command can patch it
+// via a single-field update. Optional at the typed root so old configs
+// that predate the field round-trip cleanly. The first-launch picker
+// fires whenever the field is `undefined`.
+export const LocaleSchema = z.enum(['en', 'ru']);
+export type Locale = z.infer<typeof LocaleSchema>;
+// LOCALE-CONFIG-SECTION-END -----------------------------------------
 
 // ---------- Root schema ----------
 
@@ -615,6 +672,15 @@ export const ConfigSchema = z.object({
   // `bun test {files}`. Validation: non-empty string when present.
   testCommand: z.string().min(1).optional(),
   // TEST-COMMAND-SECTION-END
+  // UPDATER-CONFIG-SECTION — auto-update settings. Optional; absence
+  // yields the safe defaults via the schema's own `.default(...)`.
+  updater: UpdaterConfigSchema.optional(),
+  // UPDATER-CONFIG-SECTION-END
+  // LOCALE-CONFIG-SECTION — chosen UI language. Optional so legacy
+  // configs round-trip cleanly; absence triggers the first-launch
+  // language picker which then writes the chosen value back.
+  locale: LocaleSchema.optional(),
+  // LOCALE-CONFIG-SECTION-END
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

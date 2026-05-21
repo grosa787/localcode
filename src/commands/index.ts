@@ -186,6 +186,11 @@ export { createShareCommand } from '@/commands/cmd-share';
 export type { ShareCommandDeps } from '@/commands/cmd-share';
 // LAN-SHARE-CMD-SECTION-END
 
+// LANGUAGE-CMD-SECTION — `/language` (alias `/lang`) UI language picker.
+export { createLanguageCommand } from '@/commands/cmd-language';
+export type { LanguageDeps } from '@/commands/cmd-language';
+// LANGUAGE-CMD-SECTION-END
+
 export type {
   AgentDeps,
   AgentLLM,
@@ -372,6 +377,15 @@ export interface BuiltinCommandFactories {
    */
   share?: SlashCommand;
   // LAN-SHARE-CMD-SECTION-END
+  // LANGUAGE-CMD-SECTION
+  /**
+   * `/language` (alias `/lang`) — UI language picker / direct set.
+   * Optional — wired by any host that owns the language-picker screen.
+   */
+  language?: SlashCommand;
+  /** Alias for `/language`. */
+  lang?: SlashCommand;
+  // LANGUAGE-CMD-SECTION-END
 }
 
 /**
@@ -446,6 +460,10 @@ export function registerBuiltinCommands(
     // LAN-SHARE-CMD-SECTION
     factories.share,
     // LAN-SHARE-CMD-SECTION-END
+    // LANGUAGE-CMD-SECTION
+    factories.language,
+    factories.lang,
+    // LANGUAGE-CMD-SECTION-END
   ];
   for (const cmd of ordered) {
     if (cmd) registry.register(cmd);

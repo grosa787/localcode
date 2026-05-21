@@ -1,0 +1,116 @@
+/* Language picker — first-launch modal.
+ *
+ * Uses tokens from `theme/tokens.css` exclusively. No hard-coded
+ * theme-specific colours — both light + dark inherit via the same
+ * variables.
+ */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--backdrop, rgba(0, 0, 0, 0.55));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.card {
+  background: var(--surface-elevated, var(--surface, #1c1736));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 14px;
+  padding: 2rem 2.25rem;
+  min-width: 360px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  color: var(--text, #eaeaf0);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-muted, rgba(234, 234, 240, 0.7));
+  text-align: center;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.95rem 1.1rem;
+  background: var(--surface, transparent);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  color: inherit;
+  font-size: 1.05rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--accent-soft, rgba(124, 58, 237, 0.18));
+  border-color: var(--accent, rgba(124, 58, 237, 0.55));
+  outline: none;
+}
+
+.row.active {
+  background: var(--accent-soft, rgba(124, 58, 237, 0.22));
+  border-color: var(--accent, rgba(124, 58, 237, 0.7));
+}
+
+.flag {
+  font-size: 2rem;
+  line-height: 1;
+  width: 2.5rem;
+  text-align: center;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.25rem;
+}
+
+.confirm {
+  padding: 0.7rem 1.6rem;
+  background: var(--accent, #7c3aed);
+  color: var(--accent-contrast, #ffffff);
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.confirm:hover,
+.confirm:focus-visible {
+  background: var(--accent-hover, #9461f0);
+  outline: none;
+}

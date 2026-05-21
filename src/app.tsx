@@ -73,6 +73,9 @@ import SettingsOverlay from '@/ui/components/SettingsOverlay';
 import { SoundPlayer } from '@/integration/sound';
 
 import OnboardingScreen from '@/ui/screens/OnboardingScreen';
+// LANGUAGE-PICKER-MOUNT-SECTION — first-launch language picker.
+import LanguagePicker from '@/ui/screens/LanguagePicker';
+// LANGUAGE-PICKER-MOUNT-SECTION-END
 import ChatScreen from '@/ui/screens/ChatScreen';
 import SkillsScreen from '@/ui/screens/SkillsScreen';
 import ModelSelectScreen from '@/ui/screens/ModelSelectScreen';
@@ -140,6 +143,9 @@ import {
   createSpawnCommand,
   createStatuslineCommand,
   createStyleCommand,
+  // LANGUAGE-CMD-SECTION — `/language` (alias `/lang`) factory.
+  createLanguageCommand,
+  // LANGUAGE-CMD-SECTION-END
   createWakeupsCommand,
   createUndoCommand,
   createWorktreesCommand,
@@ -337,6 +343,29 @@ function nowMs(): number {
   return Date.now();
 }
 
+// LANGUAGE-PICKER-MOUNT-SECTION — heuristic default for the picker.
+/**
+ * Best-effort guess at the user's preferred UI language for the
+ * first-run highlight. Reads the system locale via Intl; anything that
+ * starts with `ru` maps to Russian, otherwise English.
+ *
+ * The picker still shows even when the heuristic produced a confident
+ * answer — we just pre-highlight the matching row so the user can
+ * confirm with one keystroke.
+ */
+function detectSystemLocale(): 'en' | 'ru' {
+  try {
+    const tag = new Intl.DateTimeFormat().resolvedOptions().locale;
+    if (typeof tag === 'string' && tag.toLowerCase().startsWith('ru')) {
+      return 'ru';
+    }
+  } catch {
+    /* ignored — fall through to default */
+  }
+  return 'en';
+}
+// LANGUAGE-PICKER-MOUNT-SECTION-END
+
 /**
  * Cooldown (ms) between auto-compress invocations. Re-exported from
  * `@/llm/auto-compress` so the trigger here and the unit tests in
@@ -416,6 +445,15 @@ const IMAGE_URL_RE = /(https?:\/\/\S+\.(?:png|jpe?g|gif|webp))(?:\?\S*)?/i;
  * `ChatScreen.classifySubmit`.
  */
 const SLASH_CLEAN_IDENT_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+
+// UPDATER-WIRE-SECTION
+// PKG_VERSION mirror — kept in sync with `PKG_VERSION` in src/cli.tsx
+// and the `version` field in package.json. The single-source-of-truth
+// is package.json; cli.tsx + this module both copy the literal so the
+// embedded bundle never reads from disk. CI / test
+// `tests/cli/version-sync.test.ts` (existing) covers the drift.
+const PKG_VERSION_FOR_UPDATER = '0.19.0';
+// UPDATER-WIRE-SECTION-END
 
 /**
  * R6 (Agent 8) — defense-in-depth heuristic. Returns `true` when the
@@ -1608,9 +1646,27 @@ function App(props: AppProps): React.JSX.Element {
     return executor;
   }, [projectRoot, dangerouslyAllowAll, config?.permissions.autoApprove, config?.permissions.profile, contextManager, soundPlayer, plugins, hookEngine, sessionId, sessionManager, ontologyIndexer]);
 
+  // LANGUAGE-PICKER-MOUNT-SECTION — first-launch redirect.
+  // When the app boots straight into onboarding (no config on disk
+  // yet) we want the language picker to appear FIRST. This effect
+  // runs once after mount and flips the screen from `onboarding` to
+  // `languagePicker` before the OnboardingScreen UI is shown.
+  const initialLanguageRedirectRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (initialLanguageRedirectRef.current) return;
+    initialLanguageRedirectRef.current = true;
+    if (screen !== 'onboarding') return;
+    if (configManager.exists()) return;
+    setScreen('languagePicker');
+  }, [screen, configManager]);
+  // LANGUAGE-PICKER-MOUNT-SECTION-END
+
   // ---------- Bootstrapping: load config when entering chat ----------
   useEffect(() => {
     if (screen === 'onboarding') return;
+    // LANGUAGE-PICKER-MOUNT-SECTION — skip config load during picker.
+    if (screen === 'languagePicker') return;
+    // LANGUAGE-PICKER-MOUNT-SECTION-END
     if (config !== null) return;
     try {
       let loaded = configManager.read();
@@ -1639,6 +1695,15 @@ function App(props: AppProps): React.JSX.Element {
       }
       setConfig(loaded);
       setConfigLoadError(null);
+      // LANGUAGE-PICKER-MOUNT-SECTION — first-launch picker.
+      // When the persisted config predates the locale field, fall
+      // through to the picker screen so the user explicitly confirms a
+      // language before reaching chat. The picker's onSelect callback
+      // patches `config.locale` and advances to onboarding/chat.
+      if (loaded.locale === undefined) {
+        setScreen('languagePicker');
+      }
+      // LANGUAGE-PICKER-MOUNT-SECTION-END
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setConfigLoadError(msg);
@@ -1912,6 +1977,77 @@ function App(props: AppProps): React.JSX.Element {
       void watcher.close();
     };
   }, [memoryStore]);
+
+  // UPDATER-WIRE-SECTION
+  // Auto-update singleton. Boots after the chat screen mounts; surfaces
+  // `update-available` / `update-downloaded` as synthetic system
+  // messages via `appendLog`. Disabled when `config.updater.enabled`
+  // is false (zero traffic). The singleton owns its own scheduler so
+  // we only need to subscribe + tear down on unmount.
+  useEffect(() => {
+    if (config === null) return;
+    const updaterCfg = config.updater ?? {
+      enabled: true,
+      channel: 'stable' as const,
+      checkIntervalHours: 6,
+      autoDownload: true,
+    };
+    if (!updaterCfg.enabled) return;
+    let unsubscribe: (() => void) | null = null;
+    let stop: (() => void) | null = null;
+    void (async (): Promise<void> => {
+      try {
+        const updaterMod = await import('@/updater');
+        const { getProcessUpdater } = updaterMod;
+        // App-supplied PKG_VERSION — kept in sync with cli.tsx. Tests
+        // override via `injectedUpdater` (not yet exposed in App props).
+        const updater = getProcessUpdater({
+          currentVersion: PKG_VERSION_FOR_UPDATER,
+          autoDownload: updaterCfg.autoDownload,
+          intervalMs: updaterCfg.checkIntervalHours * 60 * 60 * 1_000,
+          forceNew: true,
+        });
+        unsubscribe = updater.on((event) => {
+          if (event.type === 'update-available') {
+            setChatLog((prev) => [
+              ...prev,
+              `📦 Update available: v${event.currentVersion} → v${event.release.version}. Downloading in background…`,
+            ]);
+          } else if (event.type === 'update-downloaded') {
+            setChatLog((prev) => [
+              ...prev,
+              `✅ Update ready: v${event.version}. Restart LocalCode to apply.`,
+            ]);
+          } else if (event.type === 'update-error') {
+            // Quiet by default — only surface when in diagnostics
+            // mode to avoid spamming users on transient failures.
+            if (config.diagnostics?.dumpFailedRequests === true) {
+              setChatLog((prev) => [
+                ...prev,
+                `[updater:${event.stage}] ${event.message}`,
+              ]);
+            }
+          }
+        });
+        updater.start();
+        stop = (): void => {
+          try {
+            updater.stop();
+          } catch {
+            /* swallow */
+          }
+        };
+      } catch {
+        /* swallow — updater is best-effort */
+      }
+    })();
+    return () => {
+      if (unsubscribe !== null) unsubscribe();
+      if (stop !== null) stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config?.updater?.enabled]);
+  // UPDATER-WIRE-SECTION-END
 
   // ---------- WakeupRegistry: install + onFire wiring (C2) ----------
   //
@@ -2290,6 +2426,23 @@ function App(props: AppProps): React.JSX.Element {
     //     by another composition root); here we just grab the singleton.
     const statuslineCmd = createStatuslineCommand({ configManager });
     const styleCmd = createStyleCommand({ configManager });
+    // LANGUAGE-CMD-SECTION — `/language` (alias `/lang`). The picker
+    // overlay is the TUI's first-launch screen; we plumb a callback so
+    // the no-arg invocation reopens it without echoing the command.
+    const languageCmd = createLanguageCommand({
+      configManager,
+      openPicker: () => setScreen('languagePicker'),
+    });
+    // Manual alias: the slash registry routes by `name`, so we just
+    // construct a second SlashCommand with `name: 'lang'` that delegates
+    // to the same handler. Keeps the alias surface explicit (it shows up
+    // in /help) without depending on registry-level alias support.
+    const langCmd: SlashCommand = {
+      ...languageCmd,
+      name: 'lang',
+      description: `${languageCmd.description} (alias for /language)`,
+    };
+    // LANGUAGE-CMD-SECTION-END
     const wakeupsCmd = createWakeupsCommand({
       registry: getProcessWakeupRegistry(),
     });
@@ -2469,6 +2622,10 @@ function App(props: AppProps): React.JSX.Element {
       spawn: spawnCmd,
       statusline: statuslineCmd,
       style: styleCmd,
+      // LANGUAGE-CMD-SECTION
+      language: languageCmd,
+      lang: langCmd,
+      // LANGUAGE-CMD-SECTION-END
       wakeups: wakeupsCmd,
       undo: undoCmd,
       worktrees: worktreesCmd,
@@ -4561,12 +4718,56 @@ function App(props: AppProps): React.JSX.Element {
     chatDispatch({ type: 'CLOSE_SKILL_OVERLAY' });
   }, []);
 
+  // LANGUAGE-PICKER-MOUNT-SECTION — first-launch + /language callback.
+  /**
+   * Called when the user confirms a row in the language picker. Persists
+   * the choice through `configManager.update(...)` (creating a minimal
+   * config blob on first launch when no file exists yet) and advances
+   * to the next screen — onboarding if it hasn't completed, chat if it
+   * has (the `/language` re-open path).
+   */
+  const onLanguageSelect = useCallback(
+    (locale: 'en' | 'ru'): void => {
+      try {
+        // When no config has been written yet `configManager.update`
+        // would merge into the on-disk shape. To avoid persisting a
+        // half-formed config before onboarding completes we only patch
+        // when a config already exists; otherwise we stash the choice
+        // on the in-memory `config` state and onboarding will fold it
+        // into the final write below.
+        if (configManager.exists()) {
+          const merged = configManager.update({ locale });
+          setConfig(merged);
+        } else if (config !== null) {
+          setConfig({ ...config, locale });
+        }
+      } catch {
+        // Non-fatal — picker still advances. We don't surface a noisy
+        // error here because the user will get the same message at the
+        // onboarding write step if the disk is genuinely unwritable.
+      }
+      // Advance to onboarding if not yet completed; otherwise back to
+      // chat (the `/language` re-open path).
+      const completed = config?.onboarding.completed === true;
+      setScreen(completed ? 'chat' : 'onboarding');
+    },
+    [configManager, config],
+  );
+  // LANGUAGE-PICKER-MOUNT-SECTION-END
+
   // ---------- Onboarding callbacks ----------
   const onOnboardComplete = useCallback(
     (cfg: AppConfig): void => {
       try {
-        configManager.write(cfg);
-        setConfig(cfg);
+        // Preserve any locale chosen via the language picker before
+        // onboarding ran (the picker stashes it on in-memory state
+        // when the config file did not yet exist).
+        const finalCfg: AppConfig =
+          config?.locale !== undefined && cfg.locale === undefined
+            ? { ...cfg, locale: config.locale }
+            : cfg;
+        configManager.write(finalCfg);
+        setConfig(finalCfg);
         setConfigLoadError(null);
         setScreen('chat');
       } catch (err) {
@@ -4574,7 +4775,7 @@ function App(props: AppProps): React.JSX.Element {
         setConfigLoadError(`Failed to save config: ${msg}`);
       }
     },
-    [configManager],
+    [configManager, config],
   );
 
   // R12 (Agent F): onboarding helpers default to the Ollama wire shape
@@ -5378,6 +5579,15 @@ function App(props: AppProps): React.JSX.Element {
 
   // Dispatch to the active screen.
   switch (screen) {
+    // LANGUAGE-PICKER-MOUNT-SECTION — first-launch language picker.
+    case 'languagePicker':
+      return (
+        <LanguagePicker
+          initial={config?.locale ?? detectSystemLocale()}
+          onSelect={onLanguageSelect}
+        />
+      );
+    // LANGUAGE-PICKER-MOUNT-SECTION-END
     case 'onboarding':
       return (
         <OnboardingScreen

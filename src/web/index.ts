@@ -185,6 +185,21 @@ export async function startWebApp(
       },
     },
   });
+  // WEB-PROJECT-CWD-FIX-SECTION
+  // Resolve a session's projectRoot at call time via the registered
+  // workspaces, falling back to the launch dir when the session row /
+  // workspace can't be located (covers transient races where the row was
+  // deleted seconds before SessionEnd fired).
+  function resolveSessionProjectRoot(sessionId: string): string {
+    try {
+      const sess = sessionManager.getSession(sessionId);
+      if (sess !== null && sess.projectRoot.length > 0) return sess.projectRoot;
+    } catch {
+      // fallthrough — best-effort lookup
+    }
+    return opts.projectRoot;
+  }
+  // WEB-PROJECT-CWD-FIX-SECTION-END
   const runtimePool = new RuntimePool({
     onSessionEnd: (sessionId, reason): void => {
       if (!lifecycleHookEngine.hasHooksFor('SessionEnd')) return;
@@ -192,7 +207,13 @@ export async function startWebApp(
         void lifecycleHookEngine
           .run({
             trigger: 'SessionEnd',
-            projectRoot: opts.projectRoot,
+            // WEB-PROJECT-CWD-FIX-SECTION
+            // Resolve the session's actual project root at fire time so
+            // user-authored SessionEnd hooks see the directory THIS session
+            // operated against, not the directory localcode --web was
+            // launched from.
+            projectRoot: resolveSessionProjectRoot(sessionId),
+            // WEB-PROJECT-CWD-FIX-SECTION-END
             sessionId,
             reason,
           })
@@ -283,36 +304,62 @@ export async function startWebApp(
   process.once('SIGTERM', cleanupWakeups);
 
   // ── Memory: per-project store + watcher ──────────────────────────────
-  // The web server is single-project per process (boots against
-  // `opts.projectRoot`), so one MemoryStore covers every session-runtime
-  // built below. Watcher refreshes the in-process snapshot whenever the
-  // user adds / edits a memory file; `buildSystemMessage` reads the
-  // snapshot per turn so changes propagate without restarting the
-  // session.
-  const memoryStore = new MemoryStore(opts.projectRoot);
-  let latestMemoryEntries: readonly MemoryEntry[] = [];
-  const reloadMemory = async (): Promise<void> => {
-    try {
-      latestMemoryEntries = await memoryStore.list();
-    } catch {
-      latestMemoryEntries = [];
-    }
-  };
-  void reloadMemory();
-  const memoryWatcher = chokidar.watch(memoryStore.directory, {
-    ignoreInitial: false,
-    depth: 1,
-    persistent: true,
-  });
-  memoryWatcher.on('add', () => { void reloadMemory(); });
-  memoryWatcher.on('change', () => { void reloadMemory(); });
-  memoryWatcher.on('unlink', () => { void reloadMemory(); });
-  memoryWatcher.on('error', () => { /* swallow — memory is best-effort */ });
+  // WEB-PROJECT-CWD-FIX-SECTION
+  // Memory is per-PROJECT, not per-launch-dir. When the user opens a
+  // different project via the workspace switcher, sessions for THAT
+  // project must see THAT project's `<root>/.localcode/memory/` — not the
+  // memory store rooted at the directory `localcode --web` was launched
+  // from. We lazily build a (store + watcher + snapshot) bag the first
+  // time each projectRoot is observed, and `createRuntimeForSession`
+  // resolves the bag for the session's projectRoot when building the
+  // system prompt.
+  interface MemoryBag {
+    readonly store: MemoryStore;
+    readonly close: () => void;
+    snapshot: readonly MemoryEntry[];
+  }
+  const memoryBags = new Map<string, MemoryBag>();
+  function getMemoryBag(projectRoot: string): MemoryBag {
+    const existing = memoryBags.get(projectRoot);
+    if (existing !== undefined) return existing;
+    const store = new MemoryStore(projectRoot);
+    const bag: MemoryBag = { store, snapshot: [], close: () => {} };
+    const reload = async (): Promise<void> => {
+      try {
+        bag.snapshot = await store.list();
+      } catch {
+        bag.snapshot = [];
+      }
+    };
+    void reload();
+    const watcher = chokidar.watch(store.directory, {
+      ignoreInitial: false,
+      depth: 1,
+      persistent: true,
+    });
+    watcher.on('add', () => { void reload(); });
+    watcher.on('change', () => { void reload(); });
+    watcher.on('unlink', () => { void reload(); });
+    watcher.on('error', () => { /* swallow — memory is best-effort */ });
+    (bag as { close: () => void }).close = (): void => {
+      void watcher.close().catch(() => { /* swallow */ });
+    };
+    memoryBags.set(projectRoot, bag);
+    return bag;
+  }
+  // Eagerly prime the launch-dir bag so the first session under
+  // `opts.projectRoot` doesn't pay the watcher-bootstrap latency on its
+  // first turn. Additional projects pay it lazily on first session open.
+  getMemoryBag(opts.projectRoot);
   const cleanupMemory = (): void => {
-    void memoryWatcher.close().catch(() => { /* swallow */ });
+    for (const bag of memoryBags.values()) {
+      try { bag.close(); } catch { /* swallow */ }
+    }
+    memoryBags.clear();
   };
   process.once('SIGINT', cleanupMemory);
   process.once('SIGTERM', cleanupMemory);
+  // WEB-PROJECT-CWD-FIX-SECTION-END
 
   // ── Multi-agent orchestrator ─────────────────────────────────────────
   // One orchestrator per process — keyed on parent (lead) sessionId.
@@ -722,10 +769,16 @@ export async function startWebApp(
             : [];
         const fallbackModel =
           freshAgents !== undefined ? freshAgents.workerModel : undefined;
-        // Memory section — read the latest watcher snapshot. The
-        // closure runs once per turn so newly added memory propagates
-        // without restarting the session.
-        const memorySection = renderMemorySection(latestMemoryEntries);
+        // Memory section — read the latest watcher snapshot for THIS
+        // session's project. The closure runs once per turn so newly
+        // added memory propagates without restarting the session.
+        // WEB-PROJECT-CWD-FIX-SECTION — resolve the per-project bag so
+        // sessions opened against a different workspace see THAT
+        // project's `.localcode/memory/` entries, not the launch dir's.
+        const memorySection = renderMemorySection(
+          getMemoryBag(projectRoot).snapshot,
+        );
+        // WEB-PROJECT-CWD-FIX-SECTION-END
         // Hierarchy of LOCALCODE.md files (project root → $HOME, plus
         // the global `~/.localcode/LOCALCODE.md`). Concatenated outermost
         // → innermost so the model sees broader rules first and project-
@@ -862,6 +915,104 @@ export async function startWebApp(
     /* best-effort — pricing degrades to static table on failure */
   });
   // PRICING-REFRESH-SECTION-END
+
+  // UPDATER-WIRE-SECTION
+  // Auto-update singleton — mirrors the TUI integration in app.tsx.
+  // Emits synthetic system messages (broadcast across all subscribed
+  // sessions) on `update-available` / `update-downloaded`. Disabled
+  // when `config.updater.enabled === false` (zero traffic).
+  let updaterCleanup: (() => void) | null = null;
+  void (async (): Promise<void> => {
+    try {
+      let updaterCfg: {
+        enabled: boolean;
+        channel: 'stable' | 'beta';
+        checkIntervalHours: number;
+        autoDownload: boolean;
+      } = {
+        enabled: true,
+        channel: 'stable',
+        checkIntervalHours: 6,
+        autoDownload: true,
+      };
+      try {
+        const cfg = configManager.read();
+        if (cfg.updater !== undefined) {
+          updaterCfg = {
+            enabled: cfg.updater.enabled,
+            channel: cfg.updater.channel,
+            checkIntervalHours: cfg.updater.checkIntervalHours,
+            autoDownload: cfg.updater.autoDownload,
+          };
+        }
+      } catch {
+        /* swallow — keep defaults */
+      }
+      if (!updaterCfg.enabled) return;
+      const { getProcessUpdater } = await import('@/updater');
+      // PKG_VERSION mirror — kept in sync with cli.tsx via the same
+      // single-source-of-truth (package.json) discipline.
+      const updater = getProcessUpdater({
+        currentVersion: '0.19.0',
+        autoDownload: updaterCfg.autoDownload,
+        intervalMs: updaterCfg.checkIntervalHours * 60 * 60 * 1_000,
+        forceNew: true,
+      });
+      const unsubscribe = updater.on((event) => {
+        // Surface updates via stderr + an error-frame broadcast. The
+        // SPA toast layer treats `type: 'error'` frames as
+        // notifications when no `sessionId` is attached. Frontend
+        // dedupes by message content.
+        if (event.type === 'update-available') {
+          process.stderr.write(
+            `localcode(web): 📦 Update available: v${event.currentVersion} → v${event.release.version}. Downloading in background…\n`,
+          );
+          const recent = sessionManager.listSessions(20);
+          for (const s of recent) {
+            eventBus.emit(s.id, {
+              type: 'error',
+              sessionId: s.id,
+              message: `📦 Update available: v${event.currentVersion} → v${event.release.version}. Downloading in background…`,
+            });
+          }
+        } else if (event.type === 'update-downloaded') {
+          process.stderr.write(
+            `localcode(web): ✅ Update ready: v${event.version}. Restart LocalCode to apply.\n`,
+          );
+          const recent = sessionManager.listSessions(20);
+          for (const s of recent) {
+            eventBus.emit(s.id, {
+              type: 'error',
+              sessionId: s.id,
+              message: `✅ Update ready: v${event.version}. Restart LocalCode to apply.`,
+            });
+          }
+        }
+      });
+      updater.start();
+      updaterCleanup = (): void => {
+        try {
+          unsubscribe();
+        } catch {
+          /* swallow */
+        }
+        try {
+          updater.stop();
+        } catch {
+          /* swallow */
+        }
+      };
+    } catch {
+      /* best-effort — updater never blocks boot */
+    }
+  })();
+  const cleanupUpdater = (): void => {
+    if (updaterCleanup !== null) updaterCleanup();
+    updaterCleanup = null;
+  };
+  process.once('SIGINT', cleanupUpdater);
+  process.once('SIGTERM', cleanupUpdater);
+  // UPDATER-WIRE-SECTION-END
 
   // Boot the MCP registry. Each configured server starts in parallel;
   // failures are recorded inside the registry (never thrown here).

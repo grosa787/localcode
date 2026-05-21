@@ -636,10 +636,17 @@ export function ChatView(props: ChatViewProps): JSX.Element {
     [enqueueMessage, pushToast, t],
   );
 
+  // ESC-CANCEL-SECTION — start
+  // Wired to Composer.onCancel + the Cancel button. The Composer's Esc
+  // handler invokes this while streaming; the server replies with a
+  // `done` frame which flips `streamingId` back to null and lets the
+  // user submit a new turn immediately. The runtime stays healthy
+  // (see X5 disconnect-recovery), so no extra reset is required here.
   const cancelStream = useCallback(() => {
     if (sessionId === null) return;
     props.wsSend({ type: 'cancel_stream', sessionId });
   }, [sessionId, props]);
+  // ESC-CANCEL-SECTION — end
 
   // AGENT-REPLY-SECTION
   // Composer reply-mode binding. When `agentReplyTarget` is set in the

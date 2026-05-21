@@ -99,12 +99,32 @@ localcode --web                      # браузерный UI (откроетс
 ## Установка
 
 ```sh
-git clone https://github.com/<твой-логин>/localcode.git
+# Установка одной командой (как у Claude Code)
+curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash
+
+# Или с привязкой к версии / ветке / тегу
+curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | LOCALCODE_REF=v0.19.0 bash
+```
+
+Скрипт определяет ОС и архитектуру, ставит Bun, если его нет (через официальный `bun.sh/install`), клонирует LocalCode в `~/.local/share/localcode`, выполняет `bun install && bun run build` и создаёт симлинк на `dist/cli.js`. Сначала пробует `~/.local/bin` (без sudo); только если каталог недоступен на запись, откатывается на `/usr/local/bin` через `sudo`. Повторный запуск той же команды обновляет существующую установку.
+
+Флаги и переменные окружения:
+
+```sh
+curl -fsSL .../install.sh | bash -s -- --update      # git pull + пересборка
+curl -fsSL .../install.sh | bash -s -- --uninstall   # удалить симлинк и install-каталог
+curl -fsSL .../install.sh | bash -s -- --verbose     # подробный вывод
+LOCALCODE_HOME=/opt/localcode bash install.sh        # свой install-каталог
+LOCALCODE_BIN_DIR=$HOME/bin bash install.sh          # свой PATH-каталог
+```
+
+Установка из существующего клона:
+
+```sh
+git clone https://github.com/grosa787/localcode.git
 cd localcode
 ./install.sh
 ```
-
-`install.sh` выполняет `bun install`, собирает `dist/cli.js` и через `sudo` создаёт симлинк в `/usr/local/bin/localcode`. После этого `localcode` доступен глобально.
 
 Без установки:
 

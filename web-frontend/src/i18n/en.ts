@@ -88,6 +88,13 @@ export const en: Record<TranslationKey, string> = {
   'locale.change': 'Change language',
   'locale.changeAria': 'Change language',
 
+  // Language picker
+  'language.title': 'Welcome to LocalCode',
+  'language.subtitle': 'Choose your language',
+  'language.en': 'English',
+  'language.ru': 'Русский',
+  'language.confirm': 'Continue',
+
   // Chat view
   'chat.loading': 'Loading conversation…',
   'chat.empty.noSession': 'No session',

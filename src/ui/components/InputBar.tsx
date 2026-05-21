@@ -1352,8 +1352,13 @@ function InputBar({
           return false;
         }
 
+        // SHIFT-ENTER-SECTION — start
         // Shift+Enter: commit the active line, start a new empty line.
-        // The cursor lands at the start of the fresh line.
+        // The cursor lands at the start of the fresh line. ink's
+        // useInput surfaces the modifier via `key.shift`; we must
+        // inspect it BEFORE the plain-Enter branch below or the submit
+        // path would swallow the keystroke and the user would see a
+        // submit instead of a newline.
         if (key.return && key.shift) {
           setHistoryIndex(null);
           savedDraftRef.current = EMPTY_STATE;
@@ -1368,6 +1373,7 @@ function InputBar({
           }));
           return true;
         }
+        // SHIFT-ENTER-SECTION — end
 
         // Plain Enter: submit the full text. We pass the composed
         // multi-line string to the parent and reset history state. The

@@ -22,9 +22,55 @@
  * Agent 4 R9 manual smoke harness; here we lock down the pure pieces.
  */
 import { describe, test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { __test__ } from '@/ui/components/InputBar';
 
 const { splitMultiline, composeFullText, isPasteEvent } = __test__;
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const INPUT_BAR_SRC = readFileSync(
+  path.resolve(HERE, '..', '..', 'src', 'ui', 'components', 'InputBar.tsx'),
+  'utf8',
+);
+
+describe('InputBar — SHIFT-ENTER-SECTION (TUI parity with web Composer)', () => {
+  test('section markers are present (start + end)', () => {
+    expect(INPUT_BAR_SRC).toMatch(/SHIFT-ENTER-SECTION — start/);
+    expect(INPUT_BAR_SRC).toMatch(/SHIFT-ENTER-SECTION — end/);
+  });
+
+  test('the Shift+Enter branch checks `key.return && key.shift` BEFORE the plain-Enter submit', () => {
+    const startIdx = INPUT_BAR_SRC.indexOf('SHIFT-ENTER-SECTION — start');
+    const endIdx = INPUT_BAR_SRC.indexOf('SHIFT-ENTER-SECTION — end');
+    expect(startIdx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(startIdx);
+    const block = INPUT_BAR_SRC.slice(startIdx, endIdx);
+    expect(block).toMatch(/if\s*\(\s*key\.return\s*&&\s*key\.shift\s*\)/);
+    // The Shift+Enter handler must NOT call onSubmit — that is the
+    // exact regression we're guarding against.
+    expect(block).not.toMatch(/onSubmit\(/);
+  });
+
+  test('the Shift+Enter branch consumes the keystroke (returns true)', () => {
+    const startIdx = INPUT_BAR_SRC.indexOf('SHIFT-ENTER-SECTION — start');
+    const endIdx = INPUT_BAR_SRC.indexOf('SHIFT-ENTER-SECTION — end');
+    const block = INPUT_BAR_SRC.slice(startIdx, endIdx);
+    expect(block).toMatch(/return\s+true;/);
+  });
+
+  test('Shift+Enter branch sits before the plain-Enter (`if (key.return)`) branch', () => {
+    const shiftBranchIdx = INPUT_BAR_SRC.search(
+      /if\s*\(\s*key\.return\s*&&\s*key\.shift\s*\)/,
+    );
+    const plainBranchIdx = INPUT_BAR_SRC.search(
+      /if\s*\(\s*key\.return\s*\)\s*\{/,
+    );
+    expect(shiftBranchIdx).toBeGreaterThan(-1);
+    expect(plainBranchIdx).toBeGreaterThan(shiftBranchIdx);
+  });
+});
 
 describe('InputBar.splitMultiline (R9)', () => {
   test('empty string → EMPTY_STATE shape (no committed lines, empty active)', () => {

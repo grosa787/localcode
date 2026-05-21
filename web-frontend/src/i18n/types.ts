@@ -91,6 +91,13 @@ export type TranslationKey =
   | 'locale.change'
   | 'locale.changeAria'
 
+  // Language picker (first-launch + /language re-open)
+  | 'language.title'
+  | 'language.subtitle'
+  | 'language.en'
+  | 'language.ru'
+  | 'language.confirm'
+
   // Chat view
   | 'chat.loading'
   | 'chat.empty.noSession'

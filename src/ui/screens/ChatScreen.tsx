@@ -1923,11 +1923,18 @@ function ChatScreen({
     ),
   );
 
+  // ESC-CANCEL-SECTION — start
   // Top-level: Esc-to-cancel while streaming (and no overlay is
   // competing for input). Double-Esc within ESC_DOUBLE_PRESS_MS also
   // clears the pending queue so the user can drop typed-ahead text
   // they regret. Single Esc keeps the queue intact (the flush will
   // still run on the cancel-driven `done` event).
+  //
+  // After cancel the parent's `done` SSE handler flips `isStreaming`
+  // false, so the runtime is immediately available for the next turn —
+  // no extra reset needed here (mirrors the X5 disconnect-recovery
+  // invariant: a cancel must NEVER leave the runtime wedged).
+  //
   // Migrated to InputDispatcher: dispatcher only routes to mode='input'
   // when neither overlay nor approval prompt owns input, so the
   // earlier defensive bails are redundant.
@@ -1962,6 +1969,7 @@ function ChatScreen({
       ],
     ),
   );
+  // ESC-CANCEL-SECTION — end
 
   const header = useMemo(
     () => (

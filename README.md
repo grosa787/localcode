@@ -99,12 +99,32 @@ Explicit `apiKey` in `~/.localcode/config.toml` wins; environment variables are 
 ## Install
 
 ```sh
-git clone https://github.com/<your-user>/localcode.git
+# One-command install (Claude-Code-style)
+curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash
+
+# Or pin a version / branch / tag
+curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | LOCALCODE_REF=v0.19.0 bash
+```
+
+The installer detects your OS/arch, installs Bun if missing (via the official `bun.sh/install`), clones LocalCode into `~/.local/share/localcode`, runs `bun install && bun run build`, and symlinks `dist/cli.js`. It prefers `~/.local/bin` (no sudo); only if that directory isn't writable does it fall back to `/usr/local/bin` with `sudo`. Re-running the same command updates an existing install.
+
+Flags & env overrides:
+
+```sh
+curl -fsSL .../install.sh | bash -s -- --update      # git pull + rebuild
+curl -fsSL .../install.sh | bash -s -- --uninstall   # remove symlink + install dir
+curl -fsSL .../install.sh | bash -s -- --verbose     # debug output
+LOCALCODE_HOME=/opt/localcode bash install.sh        # custom install dir
+LOCALCODE_BIN_DIR=$HOME/bin bash install.sh          # custom PATH dir
+```
+
+Manual install (existing clone):
+
+```sh
+git clone https://github.com/grosa787/localcode.git
 cd localcode
 ./install.sh
 ```
-
-`install.sh` runs `bun install`, builds `dist/cli.js`, and `sudo`-symlinks the bundle to `/usr/local/bin/localcode`. After that, `localcode` is on your `PATH`.
 
 To run without installing:
 

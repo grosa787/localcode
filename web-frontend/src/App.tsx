@@ -36,6 +36,7 @@ import type {
 import { RestAuthError, RestClient } from './api/rest-client';
 import { WSClient } from './api/ws-client';
 import { AddProjectDialog } from './components/AddProjectDialog';
+import { LanguagePicker } from './components/LanguagePicker';
 import { AgentSettingsOverlay } from './components/AgentSettingsOverlay';
 import { AgentTeamPanel } from './components/AgentTeamPanel';
 import { TasksPanel } from './components/TasksPanel';
@@ -232,6 +233,28 @@ export function App(): JSX.Element {
   const [tokenInfo] = useState<InitialTokenInfo>(() => readCsrfToken());
   const token = tokenInfo.token;
   const [bootError, setBootError] = useState<string | null>(null);
+  // LANGUAGE-PICKER-MOUNT-SECTION
+  // First-launch language picker. Initialised synchronously so we never
+  // render a flash of English copy before swapping to the user's chosen
+  // locale on a fresh browser profile. The picker shows iff no locale
+  // has been persisted yet (`localcode.locale` absent from storage).
+  const [needsLanguagePick, setNeedsLanguagePick] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem('localcode.locale') === null;
+    } catch {
+      return false;
+    }
+  });
+  const setStoreLocale = useStore((s) => s.setLocale);
+  const handleLanguageSelect = useCallback(
+    (locale: 'en' | 'ru'): void => {
+      setStoreLocale(locale);
+      setNeedsLanguagePick(false);
+    },
+    [setStoreLocale],
+  );
+  // LANGUAGE-PICKER-MOUNT-SECTION-END
   const [loadingSessions, setLoadingSessions] = useState<boolean>(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [generation, setGeneration] = useState<GenerationParams | null>(null);
@@ -1135,6 +1158,13 @@ export function App(): JSX.Element {
           void handleDeleteSession(sid);
         }}
       />
+      {/* LANGUAGE-PICKER-MOUNT-SECTION — first-launch modal. Rendered
+          ABOVE everything so a fresh visitor confirms a language before
+          interacting with the rest of the SPA. */}
+      {needsLanguagePick ? (
+        <LanguagePicker onSelect={handleLanguageSelect} />
+      ) : null}
+      {/* LANGUAGE-PICKER-MOUNT-SECTION-END */}
       {/* VIEWPORT-WIRE-SECTION — the active breakpoint is also exposed
           on the layout root via `data-viewport` so component CSS modules
           can scope rules without consuming the hook directly. */}

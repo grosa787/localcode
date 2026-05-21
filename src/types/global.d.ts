@@ -8,7 +8,12 @@
 
 // ---------- Screen routing ----------
 
-export type Screen = 'onboarding' | 'chat' | 'skills' | 'modelSelect';
+export type Screen =
+  | 'languagePicker'
+  | 'onboarding'
+  | 'chat'
+  | 'skills'
+  | 'modelSelect';
 
 // ---------- Backend / configuration ----------
 
@@ -326,7 +331,51 @@ export interface AppConfig {
    */
   testCommand?: string;
   // TEST-COMMAND-SECTION-END
+  // UPDATER-CONFIG-SECTION
+  /**
+   * Auto-update settings (GitHub-Releases-based updater). Optional —
+   * Zod fills `{ enabled: true, channel: 'stable', checkIntervalHours: 6,
+   * autoDownload: true }` when the section is missing from the TOML.
+   */
+  updater?: UpdaterConfig;
+  // UPDATER-CONFIG-SECTION-END
+  // LOCALE-CONFIG-SECTION
+  /**
+   * Active UI language. When undefined, the first-launch picker is
+   * shown so the user explicitly confirms English vs Russian before
+   * onboarding. Once set, persists across launches and is patched via
+   * the `/language` slash command (TUI) or the locale toggle (web).
+   */
+  locale?: Locale;
+  // LOCALE-CONFIG-SECTION-END
 }
+
+// LOCALE-CONFIG-SECTION
+/**
+ * Supported UI languages. Mirrors `LocaleSchema` in
+ * `src/config/types.ts`. The TUI + web frontend translation tables
+ * both key off this exact union.
+ */
+export type Locale = 'en' | 'ru';
+// LOCALE-CONFIG-SECTION-END
+
+// UPDATER-CONFIG-SECTION
+/**
+ * Auto-update configuration shape. Mirrors `UpdaterConfigSchema` in
+ * `src/config/types.ts`. Drives the background updater singleton in
+ * `src/updater/`.
+ */
+export interface UpdaterConfig {
+  /** Master switch. When false, the updater is dormant (zero traffic). */
+  enabled: boolean;
+  /** `stable` follows latest release; `beta` follows latest prerelease. */
+  channel: 'stable' | 'beta';
+  /** Repeating check interval in hours. Range 1..168. Default 6. */
+  checkIntervalHours: number;
+  /** When true, the scheduler downloads the tarball automatically. */
+  autoDownload: boolean;
+}
+// UPDATER-CONFIG-SECTION-END
 
 /**
  * Statusline customization shape. Mirrors `StatuslineConfigSchema` in

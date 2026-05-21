@@ -470,6 +470,10 @@ export const GetConfigResponseSchema: z.ZodType<GetConfigResponse> = z.object({
     maxTokens: z.number(),
   }),
   outputStyle: z.enum(['concise', 'explanatory', 'verbose']),
+  // LOCALE-CONFIG-SECTION — chosen UI language. Optional on the wire
+  // so old servers that predate the field round-trip cleanly.
+  locale: z.enum(['en', 'ru']).optional(),
+  // LOCALE-CONFIG-SECTION-END
 });
 
 // ---------- /api/config/model ----------

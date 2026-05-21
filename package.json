@@ -1,6 +1,6 @@
 {
   "name": "localcode",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "type": "module",
   "bin": {
     "localcode": "./dist/cli.js"
