@@ -100,18 +100,6 @@ Explicit `apiKey` in `~/.localcode/config.toml` wins; environment variables are 
 
 Pick whichever channel fits your platform — all paths land at the same binary.
 
-### npm (any OS with Node 18+)
-
-```sh
-npm install -g @grosa787/localcode
-# or run once without installing
-npx @grosa787/localcode --help
-```
-
-The npm package is a shim: on install it downloads the matching prebuilt native
-binary from GitHub Releases, verifies its SHA-256, and installs `localcode` on
-your PATH. **Bun is not required on the user's machine.**
-
 ### Debian / Ubuntu (.deb)
 
 ```sh
