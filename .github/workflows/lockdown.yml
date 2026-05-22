@@ -5,7 +5,7 @@ name: Source lockdown
 # the build if anything resembling source code leaks back in.
 #
 # What "source code" means here (allow-listed exceptions in parentheses):
-#   - Any *.ts / *.tsx file (except packages/npm/scripts/, website/src/)
+#   - Any *.ts / *.tsx file (except website/src/)
 #   - src/ directory (forbidden entirely)
 #   - tests/ directory (forbidden entirely)
 #   - web-frontend/src/ (forbidden — render-only site lives in website/)
@@ -59,7 +59,6 @@ jobs:
           set -eu
           # Allow-listed directories (paths starting with any of these are OK):
           ALLOW_PREFIXES=(
-            "packages/npm/scripts/"
             "website/src/"
           )
           # Find all tracked .ts / .tsx files.
