@@ -64,13 +64,16 @@ export interface UpdateCliOptions {
 const HELP_TEXT = `localcode update <subcommand>
 
 Subcommands:
-  check          Check GitHub for a newer release of LocalCode.
-  apply          Apply the most recently downloaded update.
-  download       Download the latest release in the background.
-  status         Show updater status (no network call).
-  enable         Enable auto-update (writes config.toml).
-  disable        Disable auto-update (writes config.toml).
-  --help, -h     Show this help and exit.
+  check               Check GitHub for a newer release of LocalCode.
+  apply               Apply the most recently downloaded update.
+  download            Download the latest release in the background.
+  skip <version>      Add <version> (e.g. 0.21.0) to the persistent
+                      skipped-versions list — future checks suppress
+                      the update prompt for that exact version.
+  status              Show updater status (no network call).
+  enable              Enable auto-update (writes config.toml).
+  disable             Disable auto-update (writes config.toml).
+  --help, -h          Show this help and exit.
 `;
 
 /**
@@ -168,6 +171,30 @@ export async function runUpdateCli(
         out(`Applied v${result.appliedVersion ?? pending.version}.`);
         return 0;
       }
+      case 'skip': {
+        // `localcode update skip <version>` — persist the version into
+        // the skipped-versions catalog so future checks suppress the
+        // update notification for that exact tag. The skip-list normalises
+        // a leading `v`, so both `v0.21.0` and `0.21.0` work.
+        const version = argv[1];
+        if (version === undefined || version.trim().length === 0) {
+          err('Missing argument: localcode update skip <version>');
+          err('Example: localcode update skip 0.21.0');
+          return 2;
+        }
+        const updater = ensureUpdater();
+        try {
+          await updater.skipVersion(version);
+          const normalised = version.startsWith('v') || version.startsWith('V')
+            ? version.slice(1)
+            : version;
+          out(`Skipped v${normalised}. Future checks will not surface it.`);
+          return 0;
+        } catch (e) {
+          err(`Failed to record skip: ${e instanceof Error ? e.message : String(e)}`);
+          return 1;
+        }
+      }
       case 'status': {
         const pending = await readPendingManifest();
         out(`Current version: v${currentVersion}`);
@@ -190,6 +217,7 @@ export async function runUpdateCli(
             autoDownload: true,
             checkOnLaunch: true,
             silentBackground: true,
+            preferPatchDelta: true,
           };
           manager.update({
             updater: {
@@ -199,6 +227,7 @@ export async function runUpdateCli(
               autoDownload: existing.autoDownload,
               checkOnLaunch: existing.checkOnLaunch,
               silentBackground: existing.silentBackground,
+              preferPatchDelta: existing.preferPatchDelta,
             },
           });
           out(`Auto-update ${enabled ? 'enabled' : 'disabled'}.`);

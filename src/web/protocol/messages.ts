@@ -420,6 +420,14 @@ export type WSServerMessage =
       releaseName: string;
       body: string;
       publishedAt: number;
+      /**
+       * Optional concatenated release notes spanning every release
+       * between the running version and the latest. When present, the
+       * SPA renders this in the modal body instead of `body`; absence
+       * (e.g. on the first WS frame, or when the GitHub API failed)
+       * leaves the modal showing the single-release `body`.
+       */
+      deltaNotes?: string;
     }
   | {
       /**
@@ -762,6 +770,7 @@ export const WSServerMessageSchema: z.ZodType<WSServerMessage> = z.union([
     releaseName: z.string(),
     body: z.string(),
     publishedAt: z.number(),
+    deltaNotes: z.string().optional(),
   }),
   z.object({
     type: z.literal('update_downloaded'),

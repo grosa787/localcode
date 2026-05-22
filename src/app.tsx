@@ -164,6 +164,10 @@ import {
   // LANGUAGE-CMD-SECTION — `/language` (alias `/lang`) factory.
   createLanguageCommand,
   // LANGUAGE-CMD-SECTION-END
+  // SITE-CMD-SECTION — `/site` opens the landing page in the user's
+  // default browser. No deps; pure local action.
+  createSiteCommand,
+  // SITE-CMD-SECTION-END
   // WEB-CMD-SECTION — `/web` (and `/web stop`) — boot the embedded web
   // UI in-process so the user can continue the current session in their
   // browser without leaving the TUI. The composition root owns the
@@ -2084,6 +2088,7 @@ function App(props: AppProps): React.JSX.Element {
       autoDownload: true,
       checkOnLaunch: true,
       silentBackground: true,
+      preferPatchDelta: true,
     };
     if (!updaterCfg.enabled) return;
     let unsubscribe: (() => void) | null = null;
@@ -2098,6 +2103,7 @@ function App(props: AppProps): React.JSX.Element {
           currentVersion: PKG_VERSION_FOR_UPDATER,
           autoDownload: updaterCfg.autoDownload,
           intervalMs: updaterCfg.checkIntervalHours * 60 * 60 * 1_000,
+          preferPatchDelta: updaterCfg.preferPatchDelta,
           forceNew: true,
         });
         updaterRef.current = updater;
@@ -2108,6 +2114,14 @@ function App(props: AppProps): React.JSX.Element {
             // background mode is enforced by NOT emitting any pre-event
             // "checking…" — the only visible affordance is the overlay
             // itself.
+            //
+            // DELTA-NOTES-FETCH — open the overlay immediately with the
+            // single-release body so the user has SOMETHING the moment
+            // detection fires, then opportunistically swap in the
+            // concatenated delta (every intermediate release between
+            // current → latest) once the GitHub API returns. The first
+            // call is bounded by the in-module 24h cache so reopening
+            // does not re-fetch.
             setUpdateOverlayInfo({
               currentVersion: event.currentVersion,
               latestVersion: event.release.version,
@@ -2115,6 +2129,22 @@ function App(props: AppProps): React.JSX.Element {
               releaseName: event.release.name,
               body: event.release.body,
             });
+            void (async (): Promise<void> => {
+              try {
+                const delta = await updater.getDeltaNotes();
+                if (delta !== null && delta.notes.trim().length > 0) {
+                  setUpdateOverlayInfo({
+                    currentVersion: event.currentVersion,
+                    latestVersion: event.release.version,
+                    releaseUrl: event.release.htmlUrl,
+                    releaseName: event.release.name,
+                    body: delta.notes,
+                  });
+                }
+              } catch {
+                /* swallow — best-effort, original body already shown */
+              }
+            })();
           } else if (event.type === 'update-downloaded') {
             setUpdateDownloadedVersion(event.version);
             if (updaterCfg.silentBackground !== true) {
@@ -2551,6 +2581,11 @@ function App(props: AppProps): React.JSX.Element {
       description: `${languageCmd.description} (alias for /language)`,
     };
     // LANGUAGE-CMD-SECTION-END
+
+    // SITE-CMD-SECTION — `/site` is a thin shell-out command (open|xdg-open).
+    // No deps, no LLM round-trip.
+    const siteCmd = createSiteCommand();
+    // SITE-CMD-SECTION-END
     const wakeupsCmd = createWakeupsCommand({
       registry: getProcessWakeupRegistry(),
     });
@@ -2788,6 +2823,9 @@ function App(props: AppProps): React.JSX.Element {
       language: languageCmd,
       lang: langCmd,
       // LANGUAGE-CMD-SECTION-END
+      // SITE-CMD-SECTION
+      site: siteCmd,
+      // SITE-CMD-SECTION-END
       wakeups: wakeupsCmd,
       undo: undoCmd,
       worktrees: worktreesCmd,

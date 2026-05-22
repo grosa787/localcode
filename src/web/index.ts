@@ -931,6 +931,7 @@ export async function startWebApp(
         autoDownload: boolean;
         checkOnLaunch: boolean;
         silentBackground: boolean;
+        preferPatchDelta: boolean;
       } = {
         enabled: true,
         channel: 'stable',
@@ -938,6 +939,7 @@ export async function startWebApp(
         autoDownload: true,
         checkOnLaunch: true,
         silentBackground: true,
+        preferPatchDelta: true,
       };
       try {
         const cfg = configManager.read();
@@ -949,6 +951,7 @@ export async function startWebApp(
             autoDownload: cfg.updater.autoDownload,
             checkOnLaunch: cfg.updater.checkOnLaunch,
             silentBackground: cfg.updater.silentBackground,
+            preferPatchDelta: cfg.updater.preferPatchDelta,
           };
         }
       } catch {
@@ -962,6 +965,7 @@ export async function startWebApp(
         currentVersion: '0.19.0',
         autoDownload: updaterCfg.autoDownload,
         intervalMs: updaterCfg.checkIntervalHours * 60 * 60 * 1_000,
+        preferPatchDelta: updaterCfg.preferPatchDelta,
         forceNew: true,
       });
       const unsubscribe = updater.on((event) => {
@@ -988,6 +992,32 @@ export async function startWebApp(
               publishedAt: event.release.publishedAt,
             });
           }
+          // DELTA-NOTES-WS-SECTION — opportunistically fetch the
+          // concatenated delta (every release between current → latest)
+          // and re-emit a SECOND frame so the modal swaps in the
+          // richer body. Best-effort: a failure here just leaves the
+          // single-release `body` from the first frame.
+          void (async (): Promise<void> => {
+            try {
+              const delta = await updater.getDeltaNotes();
+              if (delta === null || delta.notes.trim().length === 0) return;
+              const refreshed = sessionManager.listSessions(20);
+              for (const s of refreshed) {
+                eventBus.emit(s.id, {
+                  type: 'update_available',
+                  currentVersion: event.currentVersion,
+                  latestVersion: event.release.version,
+                  releaseUrl: event.release.htmlUrl,
+                  releaseName: event.release.name,
+                  body: event.release.body,
+                  publishedAt: event.release.publishedAt,
+                  deltaNotes: delta.notes,
+                });
+              }
+            } catch {
+              /* swallow — first frame already shipped */
+            }
+          })();
         } else if (event.type === 'update-downloaded') {
           if (updaterCfg.silentBackground !== true) {
             process.stderr.write(

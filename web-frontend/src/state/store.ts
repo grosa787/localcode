@@ -439,6 +439,13 @@ export interface UpdateAvailableInfo {
   readonly releaseName: string;
   readonly body: string;
   readonly publishedAt: number;
+  /**
+   * Concatenated release notes spanning every release between current
+   * → latest. Optional — present on the SECOND `update_available` WS
+   * frame after the server fetched delta notes; absent on the first
+   * frame. When present, the modal renders this instead of `body`.
+   */
+  readonly deltaNotes?: string;
 }
 // UPDATE-MODAL-STORE-SECTION-END
 

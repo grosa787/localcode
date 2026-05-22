@@ -388,3 +388,89 @@ jobs:
             release/localcode-*-from-*-to-*.patch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ----------------------------------------------------------------------
+  # npm: publish the `@grosa787/localcode` shim (downloads the prebuilt
+  # binary on `postinstall`) once the GitHub Release exists. Aligns the
+  # package version with the tag via `npm version --no-git-tag-version`
+  # so end users can run `npm i -g @grosa787/localcode`.
+  #
+  # Requires the repo secret `NPM_TOKEN` (npm automation token with
+  # publish access to the @grosa787 scope). The job is gated `if:
+  # secrets.NPM_TOKEN != ''` so forks without the secret do not fail
+  # the whole release.
+  # ----------------------------------------------------------------------
+  npm-publish:
+    name: Publish npm shim
+    runs-on: ubuntu-22.04
+    needs: [release]
+    # NOTE: GHA does not expose secrets in `if:`; instead we guard inside
+    # the step with `env: NPM_TOKEN` and skip when empty so forks without
+    # NPM_TOKEN do not fail the whole release.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag and version
+        id: meta
+        shell: bash
+        run: |
+          set -eu
+          if [ -n "${{ inputs.tag || '' }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          case "$TAG" in
+            v*) VERSION="${TAG#v}" ;;
+            *)  VERSION="$TAG" ;;
+          esac
+          echo "tag=$TAG"         >>"$GITHUB_OUTPUT"
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+
+      - name: Setup Node (npm registry)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Align packages/npm/package.json with tag
+        working-directory: packages/npm
+        run: |
+          set -eu
+          # --no-git-tag-version: don't create a new commit/tag; just
+          # rewrite package.json. --allow-same-version handles the case
+          # where the manifest is already on the tag's version (idempotent
+          # re-runs via workflow_dispatch).
+          npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version --allow-same-version
+          cat package.json | head -5
+
+      - name: Publish to npm
+        if: env.NPM_TOKEN != ''
+        working-directory: packages/npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -eu
+          # --access public — required for first publish of a scoped pkg.
+          # Idempotent re-runs (same version already published) will fail
+          # with E_PUBLISHCONFLICT; that's fine for workflow_dispatch
+          # re-runs because the package is then already at the right
+          # version on the registry.
+          npm publish --access public || {
+            code=$?
+            if npm view "@grosa787/localcode@${{ steps.meta.outputs.version }}" version >/dev/null 2>&1; then
+              echo "npm: version ${{ steps.meta.outputs.version }} already published — treating as success"
+              exit 0
+            fi
+            exit $code
+          }
+
+      - name: Skip publish (NPM_TOKEN not set)
+        if: env.NPM_TOKEN == ''
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "Skipping npm publish: NPM_TOKEN repo secret is not configured."
+          echo "Add NPM_TOKEN (npm automation token with publish rights) to enable."

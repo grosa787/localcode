@@ -407,6 +407,13 @@ export interface UpdaterConfig {
    * affordance — only the eventual modal trigger fires.
    */
   silentBackground: boolean;
+  /**
+   * When true (default), prefer downloading a tiny binary delta patch
+   * over the full release tarball when one is published for the
+   * current platform/version pair. Falls back to the full tarball on
+   * any failure. Mirrors `Updater.opts.preferPatchDelta`.
+   */
+  preferPatchDelta: boolean;
 }
 // UPDATER-CONFIG-SECTION-END
 

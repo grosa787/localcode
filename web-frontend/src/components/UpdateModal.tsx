@@ -60,9 +60,16 @@ export function UpdateModal({
 
   // Hooks must run unconditionally — compute body BEFORE the early
   // return so React's hook order stays stable when the modal toggles.
+  // Prefer the concatenated delta notes when the server has supplied
+  // them; fall back to the single-release `body` from the first WS
+  // frame so the modal is never empty.
   const renderedBody = useMemo(() => {
     if (info === null) return '';
-    return renderMarkdownLite(info.body);
+    const source =
+      info.deltaNotes !== undefined && info.deltaNotes.trim().length > 0
+        ? info.deltaNotes
+        : info.body;
+    return renderMarkdownLite(source);
   }, [info]);
 
   if (info === null || open === false) {

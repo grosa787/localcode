@@ -130,6 +130,10 @@ Subcommands:
                               Exits 0 on success, 1 if any check fails.
   completion <shell>          Print a completion script for the named shell
                               (bash | zsh | fish) to stdout.
+  update <action>             Manage the auto-updater
+                              (check | apply | download | skip <ver> |
+                               status | enable | disable). Run
+                              \`localcode update --help\` for details.
 
 Examples:
   localcode                   # open the current directory

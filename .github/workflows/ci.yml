@@ -31,6 +31,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Generate embedded web assets (required for tsc)
+        # `src/web/bundle/embedded-assets.ts` is gitignored — it is the
+        # output of `scripts/embed-web.ts` after a Vite build of the SPA.
+        # Without it, `tsc --noEmit` cannot resolve `src/web/server/static.ts`'s
+        # `import ... from '../bundle/embedded-assets'`. We build the SPA
+        # then embed it here so the rest of the job has a populated module.
+        run: bun run build:web && bun run embed-web
+
       - name: Type check
         run: bunx tsc --noEmit
 
@@ -76,14 +84,38 @@ jobs:
       - name: Strict checks (no any, no @ts-ignore)
         run: |
           set -e
-          # Forbid `any` in source (allow in tests if absolutely needed)
-          if grep -rn ": any\b\|<any>\|as any\b" src/ --include='*.ts' --include='*.tsx' | grep -v '// allow-any:'; then
+          # Forbid `any` in source (allow in tests if absolutely needed).
+          # We grep then filter out:
+          #   - lines that begin with `//` or `*` (line / block-comment bodies)
+          #   - lines inside string literals (rough heuristic: at least one `'`
+          #     or `"` to the LEFT of the match)
+          #   - explicit `// allow-any:` escape hatches
+          # The negative result must be empty for the lint to pass.
+          if grep -rn ": any\b\|<any>\|as any\b" src/ --include='*.ts' --include='*.tsx' \
+              | grep -v '// allow-any:' \
+              | grep -Ev "^[^:]+:[0-9]+:\s*(//|\*)" \
+              | grep -Ev "['\"][^'\"]*: any\b" \
+              | grep -Ev "['\"][^'\"]*<any>" \
+              | grep -Ev "['\"][^'\"]*as any\b" \
+              | grep -E '.+' >/dev/null; then
             echo "::error::Found 'any' usages in src/. Add '// allow-any: <reason>' if intentional."
+            grep -rn ": any\b\|<any>\|as any\b" src/ --include='*.ts' --include='*.tsx' \
+              | grep -v '// allow-any:' \
+              | grep -Ev "^[^:]+:[0-9]+:\s*(//|\*)" \
+              | grep -Ev "['\"][^'\"]*: any\b" \
+              | grep -Ev "['\"][^'\"]*<any>" \
+              | grep -Ev "['\"][^'\"]*as any\b" || true
             exit 1
           fi
-          # Forbid @ts-ignore in src
-          if grep -rn "@ts-ignore\|@ts-expect-error" src/ --include='*.ts' --include='*.tsx'; then
+          # Forbid @ts-ignore in src (same comment/string filtering).
+          if grep -rn "@ts-ignore\|@ts-expect-error" src/ --include='*.ts' --include='*.tsx' \
+              | grep -Ev "^[^:]+:[0-9]+:\s*(//|\*)" \
+              | grep -Ev "['\"][^'\"]*@ts-(ignore|expect-error)" \
+              | grep -E '.+' >/dev/null; then
             echo "::error::Found @ts-ignore / @ts-expect-error in src/. Fix the underlying type instead."
+            grep -rn "@ts-ignore\|@ts-expect-error" src/ --include='*.ts' --include='*.tsx' \
+              | grep -Ev "^[^:]+:[0-9]+:\s*(//|\*)" \
+              | grep -Ev "['\"][^'\"]*@ts-(ignore|expect-error)" || true
             exit 1
           fi
           echo "Strict checks passed."

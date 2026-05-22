@@ -591,6 +591,16 @@ export const UpdaterConfigSchema = z
      * indicator for power users who want feedback during the check.
      */
     silentBackground: z.boolean().default(true),
+    /**
+     * When true (default), the downloader prefers a tiny binary delta
+     * patch (`localcode-<os>-<arch>-from-<prev>-to-<new>.patch`, applied
+     * via `bspatch`) over the full release tarball — shrinking the
+     * on-disk download from ~13 MB to a few hundred KB on incremental
+     * upgrades. Falls back to the full tarball whenever the patch asset
+     * is missing, `bspatch` is unavailable, or SHA-256 verification
+     * fails. Mirrors `Updater.opts.preferPatchDelta`.
+     */
+    preferPatchDelta: z.boolean().default(true),
   })
   .default({
     enabled: true,
@@ -599,6 +609,7 @@ export const UpdaterConfigSchema = z
     autoDownload: true,
     checkOnLaunch: true,
     silentBackground: true,
+    preferPatchDelta: true,
   });
 
 export type UpdaterConfig = z.infer<typeof UpdaterConfigSchema>;

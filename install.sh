@@ -433,6 +433,29 @@ main() {
       USED_PREBUILT=1
     else
       log "prebuilt-binary path unavailable; falling back to source-build"
+      # The prebuilt attempt created $LOCALCODE_HOME (and possibly $LOCALCODE_HOME/bin)
+      # but did NOT write a `.git` directory. The downstream fetch_repo() refuses
+      # to clobber a non-empty, non-git dir — so we clean up here unless the
+      # user already had a populated install we'd be wiping. Only remove the
+      # dir if its only contents are the empty `bin/` we just made.
+      if [ -d "$LOCALCODE_HOME" ] && [ ! -d "$LOCALCODE_HOME/.git" ]; then
+        # Detect: dir is "fresh" — either empty, or contains only an empty bin/.
+        # If the only contents are an empty `bin/`, remove that first so the
+        # top-level rmdir succeeds.
+        if [ -d "$LOCALCODE_HOME/bin" ]; then
+          rmdir "$LOCALCODE_HOME/bin" 2>/dev/null || true
+        fi
+        # rmdir only succeeds if the directory is now empty — safe to attempt
+        # blindly; we explicitly do NOT use `rm -rf` so we never clobber a
+        # populated directory the user may want preserved.
+        rmdir "$LOCALCODE_HOME" 2>/dev/null || true
+        if [ -d "$LOCALCODE_HOME" ] && [ ! -d "$LOCALCODE_HOME/.git" ]; then
+          # Still there → had unexpected contents. Surface, then let
+          # fetch_repo() emit the canonical "refusing to clobber" error.
+          remaining="$(ls -A "$LOCALCODE_HOME" 2>/dev/null | tr '\n' ' ')"
+          warn "$LOCALCODE_HOME has unexpected contents after prebuilt failure: $remaining"
+        fi
+      fi
     fi
   fi
 
