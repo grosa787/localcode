@@ -77,8 +77,13 @@ describe('ChatScreen — type-ahead-while-busy queue invariants', () => {
   test('double-Esc clears the queue', () => {
     expect(source).toContain('ESC_DOUBLE_PRESS_MS');
     expect(source).toContain('Cleared queued messages');
-    // Single Esc still cancels the active stream.
-    expect(source).toMatch(/if\s*\(\s*isStreaming\s*\)\s*onCancel\(\s*\)/);
+    // Single Esc still cancels the active stream. Wave 8C wrapped the
+    // call in a block (also restores last user text into the draft);
+    // either the inline form `if (isStreaming) onCancel()` or the
+    // block form `if (isStreaming) { ... onCancel() ... }` is fine.
+    expect(source).toMatch(
+      /if\s*\(\s*isStreaming\s*\)\s*(?:onCancel\(\s*\)|\{[\s\S]*?onCancel\(\s*\))/,
+    );
   });
 
   test('flush effect is gated by lastTurnError (Fix 2)', () => {

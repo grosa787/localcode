@@ -5,7 +5,10 @@ import { Nav } from './components/Nav';
 import { Hero } from './sections/Hero';
 import { InstallPicker } from './sections/InstallPicker';
 import { Features } from './sections/Features';
+import { Commands } from './sections/Commands';
+import { Profiles } from './sections/Profiles';
 import { Surfaces } from './sections/Surfaces';
+import { Privacy } from './sections/Privacy';
 import { Demo } from './sections/Demo';
 import { Channels } from './sections/Channels';
 import { Footer } from './sections/Footer';
@@ -28,7 +31,10 @@ function Page(): JSX.Element {
         <Hero />
         <InstallPicker />
         <Features />
+        <Commands />
+        <Profiles />
         <Surfaces />
+        <Privacy />
         <Demo />
         <Channels />
       </motion.div>

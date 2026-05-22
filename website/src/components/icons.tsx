@@ -67,6 +67,63 @@ const ICONS = {
       <path d="M9 8l3 3 3-3" />
     </Frame>
   ),
+  branch: (
+    <Frame>
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="18" cy="6" r="2" />
+      <circle cx="12" cy="20" r="2" />
+      <path d="M6 8v4a4 4 0 0 0 4 4h4a4 4 0 0 0 4-4V8" />
+      <path d="M12 16v2" />
+    </Frame>
+  ),
+  graph: (
+    <Frame>
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="18" cy="6" r="2" />
+      <circle cx="6" cy="18" r="2" />
+      <circle cx="18" cy="18" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <path d="M7.5 7.5l3 3M16.5 7.5l-3 3M7.5 16.5l3-3M16.5 16.5l-3-3" />
+    </Frame>
+  ),
+  compass: (
+    <Frame>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M15 9l-2 5-5 2 2-5 5-2z" />
+    </Frame>
+  ),
+  shieldKey: (
+    <Frame>
+      <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z" />
+      <circle cx="10" cy="13" r="2" />
+      <path d="M11.5 14l3 3M13 15.5l1 1" />
+    </Frame>
+  ),
+  network: (
+    <Frame>
+      <circle cx="12" cy="12" r="3" />
+      <circle cx="4" cy="6" r="1.7" />
+      <circle cx="20" cy="6" r="1.7" />
+      <circle cx="4" cy="18" r="1.7" />
+      <circle cx="20" cy="18" r="1.7" />
+      <path d="M9.5 10.5L5.2 7.2M14.5 10.5l4.3-3.3M9.5 13.5L5.2 16.8M14.5 13.5l4.3 3.3" />
+    </Frame>
+  ),
+  palette: (
+    <Frame>
+      <path d="M12 3a9 9 0 0 0 0 18c1.5 0 2-1 2-2 0-1.5 1-2 2.5-2H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9z" />
+      <circle cx="7.5" cy="11" r="1" />
+      <circle cx="10" cy="7.5" r="1" />
+      <circle cx="14.5" cy="7.5" r="1" />
+      <circle cx="17" cy="11" r="1" />
+    </Frame>
+  ),
+  refresh: (
+    <Frame>
+      <path d="M4 12a8 8 0 0 1 14-5.3L20 4v6h-6" />
+      <path d="M20 12a8 8 0 0 1-14 5.3L4 20v-6h6" />
+    </Frame>
+  ),
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -82,6 +82,7 @@ import { dimSeparator, noxPalette, textMuted, theme } from '../theme.js';
 import { useInputModeHandler, type InputEvent } from './InputDispatcher.js';
 import StatusPill, { type StatusPillProps } from './StatusPill.js';
 import InputBorder from './InputBorder.js';
+import { useT } from '../../i18n/index.js';
 import { useTerminalWidth } from '../hooks/useTerminalWidth.js';
 // AUTO-IMAGE-PROMOTE-SECTION imports — pure helpers; no React deps.
 import {
@@ -1648,7 +1649,12 @@ function InputBar({
     : isBashMode
       ? chalk.hex('#86efac').bold('$')
       : theme.prompt;
-  const placeholderText = placeholder ?? 'Type a message or /command…';
+  // LOCALE-APPLY-SECTION — placeholder + bash-mode hint flip with the
+  // active locale. `useT()` re-renders InputBar when the user runs
+  // `/language` so the new copy is visible without restart.
+  const { t } = useT();
+  const placeholderText = placeholder ?? t('input.placeholder');
+  // LOCALE-APPLY-SECTION-END
 
   // Decide whether to show the placeholder. Convention: only when both
   // the active line and the committed buffer are empty.
@@ -1743,7 +1749,7 @@ function InputBar({
       {isBashMode && (
         <Box paddingLeft={2}>
           <Text color={textMuted} dimColor>
-            $ Bash mode — output goes to chat only, model won't see it
+            {t('input.bashModeHint')}
           </Text>
         </Box>
       )}

@@ -10,12 +10,25 @@ interface Channel {
   readonly ready: boolean;
 }
 
+// Install channel ordering matches docs: curl first (the supported path),
+// then apt / dnf (planned packages), then source build. npm was removed in
+// v0.21 — there is no npm channel anymore.
 const CHANNELS: ReadonlyArray<Channel> = [
-  { id: 'curl', label: 'curl', cmd: 'curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash', ready: true },
-  { id: 'npm', label: 'npm', cmd: 'npm install -g localcode', ready: false },
-  { id: 'brew', label: 'Homebrew', cmd: 'brew install grosa787/tap/localcode', ready: false },
+  {
+    id: 'curl',
+    label: 'curl',
+    cmd: 'curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash',
+    ready: true,
+  },
   { id: 'apt', label: 'apt', cmd: 'apt install localcode', ready: false },
   { id: 'dnf', label: 'dnf', cmd: 'dnf install localcode', ready: false },
+  { id: 'brew', label: 'Homebrew', cmd: 'brew install grosa787/tap/localcode', ready: false },
+  {
+    id: 'source',
+    label: 'source',
+    cmd: 'git clone https://github.com/grosa787/localcode && cd localcode/localcode && ./install.sh',
+    ready: true,
+  },
 ];
 
 export function Channels(): JSX.Element {

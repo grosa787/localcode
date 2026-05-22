@@ -19,7 +19,7 @@ export function Hero(): JSX.Element {
         >
           <motion.div variants={fadeUp} className={styles.badge}>
             <span className={styles.pulse} aria-hidden="true" />
-            v0.20 — local-first
+            {t.hero.versionBadge}
           </motion.div>
 
           <motion.h1 variants={fadeUp} className={styles.headline}>

@@ -47,8 +47,14 @@ describe('ChatScreen — ESC-CANCEL-SECTION', () => {
     const startIdx = src.indexOf('// ESC-CANCEL-SECTION — start');
     const endIdx = src.indexOf('// ESC-CANCEL-SECTION — end');
     const block = src.slice(startIdx, endIdx);
-    // Allow whitespace between `if (isStreaming) onCancel();`.
-    expect(block).toMatch(/if\s*\(\s*isStreaming\s*\)\s*onCancel\(\)/);
+    // Wave 8C: `if (isStreaming)` now opens a block that also restores
+    // the last user message into the draft. Both the inline single-
+    // statement form (`if (isStreaming) onCancel();`) and the block
+    // form (`if (isStreaming) { onCancel(); ... }`) are acceptable —
+    // what matters is that onCancel is gated on isStreaming.
+    expect(block).toMatch(
+      /if\s*\(\s*isStreaming\s*\)\s*(?:onCancel\(\)|\{[\s\S]*?onCancel\(\))/,
+    );
   });
 
   test('the cancel branch returns a consumed marker so the keystroke does not leak', () => {

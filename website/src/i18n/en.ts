@@ -14,6 +14,7 @@ export const en: Strings = {
     installCta: 'Install in 10 seconds',
     copy: 'Copy',
     copied: 'Copied',
+    versionBadge: 'v0.21 — local-first',
   },
   install: {
     heading: 'One line. No Electron. No telemetry.',
@@ -42,14 +43,54 @@ export const en: Strings = {
         body: 'Polished ink TUI and a real web UI with tabs, dock, voice, drag-drop, PDF, whiteboard.',
       },
       {
-        icon: 'brain',
-        title: 'Skills + memory',
-        body: 'Markdown skills auto-discovered. Project memory persists across sessions.',
+        icon: 'tools',
+        title: '30+ tools out of the box',
+        body: 'read_file, edit_file, run_command, glob_search, lint_file, find_symbol, fetch_image, web_search, and more.',
       },
       {
-        icon: 'tools',
-        title: 'Tool ecosystem',
-        body: 'read/write/edit, run, glob, lint, find_symbol, fetch_image, MCP servers, plugins.',
+        icon: 'agent',
+        title: 'Sub-agents on demand',
+        body: 'Spawn architect, debugger, security-reviewer workers from a curated catalog via /spawn.',
+      },
+      {
+        icon: 'brain',
+        title: 'Memory + skills + hooks + MCP',
+        body: 'Markdown skills hot-reload. Per-project memory. Settings-driven hooks. Any MCP server.',
+      },
+      {
+        icon: 'branch',
+        title: 'Branching sessions + /undo',
+        body: 'Fork any turn into a side branch. Roll back a tool call without losing the conversation.',
+      },
+      {
+        icon: 'graph',
+        title: 'Code ontology',
+        body: 'LSP-powered query tools map symbols, references, and types across the repo.',
+      },
+      {
+        icon: 'compass',
+        title: 'Architecture rules',
+        body: '.localcode/arch.toml declares which modules may import which. Violations block edits.',
+      },
+      {
+        icon: 'shieldKey',
+        title: 'Secret scanner + sensitive files',
+        body: 'Keys, tokens, .env paths flagged before they hit a diff or a commit.',
+      },
+      {
+        icon: 'network',
+        title: 'LAN P2P session sharing',
+        body: 'mDNS-discovered peers can attach to your session on the local network. No cloud relay.',
+      },
+      {
+        icon: 'palette',
+        title: 'Whiteboard + PDF + voice',
+        body: 'Drag-drop a PDF, sketch on the whiteboard, dictate the next step — all in the web UI.',
+      },
+      {
+        icon: 'refresh',
+        title: 'Auto-update with delta patches',
+        body: 'Background self-update. Bsdiff/xdelta-style binary patches keep updates tiny.',
       },
       {
         icon: 'usb',
@@ -61,10 +102,51 @@ export const en: Strings = {
         title: 'Local-first',
         body: 'Single Bun binary. SQLite session store. No cloud calls unless you opt in.',
       },
+    ],
+  },
+  commands: {
+    heading: 'Slash commands',
+    subheading: 'Powerful actions, one keystroke away.',
+    items: [
+      { cmd: '/web', body: 'Open the web UI in your browser — tabs, files, sessions, voice.' },
+      { cmd: '/update', body: 'Self-update to the latest release. Delta patches keep it tiny.' },
+      { cmd: '/diff', body: 'Show pending diffs across the session before you commit.' },
+      { cmd: '/branch', body: 'Fork the current turn into a side branch. Try ideas without losing context.' },
+      { cmd: '/spawn', body: 'Spawn a sub-agent — architect, debugger, security-reviewer — on a subtask.' },
+      { cmd: '/usage', body: 'Per-model token + cost breakdown for the current session.' },
+      { cmd: '/language', body: 'Switch UI language. EN / RU built in.' },
+      { cmd: '/undo', body: 'Roll back the last tool call without losing chat history.' },
+    ],
+  },
+  profiles: {
+    heading: 'Permission profiles',
+    subheading: 'Five presets. Switch with /permissions.',
+    items: [
+      { name: 'Read-only', body: 'Read tools auto-approve. Everything mutating requires confirmation.' },
+      { name: 'Cautious', body: 'Default. Read auto, every write/run shows a diff or command preview.' },
+      { name: 'Trusted edits', body: 'Edits in the project root auto-approve. Shell commands still gated.' },
+      { name: 'Trusted shell', body: 'Edits + shell auto-approve inside the project. Network calls gated.' },
+      { name: 'Unrestricted', body: 'Everything auto. Use only in throwaway sandboxes.' },
+    ],
+  },
+  privacy: {
+    heading: 'Privacy + security',
+    points: [
       {
-        icon: 'agent',
-        title: 'Sub-agents',
-        body: 'Spawn architect, debugger, security-reviewer workers from a curated catalog.',
+        title: 'Local-first by design',
+        body: 'A single Bun binary running on your machine. Sessions, settings, and skills live in ~/.localcode and your project.',
+      },
+      {
+        title: 'No telemetry',
+        body: 'Your code never leaves your machine unless you choose a cloud LLM. Even then, only the prompt goes out — never your filesystem.',
+      },
+      {
+        title: 'Signed + notarized releases',
+        body: 'macOS builds are code-signed and Apple-notarized. Linux releases are checksummed and signed.',
+      },
+      {
+        title: 'Secret scanner blocks leaks',
+        body: 'Keys, tokens, and .env content are detected before they hit a diff or a shell command. Commit-blocking by default.',
       },
     ],
   },

@@ -90,4 +90,9 @@ export const ru: StringTable = {
   'slash.noMatch': 'Нет команд по запросу "{query}"',
   'slash.moreAbove': '↑ ещё {n}',
   'slash.moreBelow': '↓ ещё {n}',
+
+  // ---------- Поле ввода ----------
+  'input.placeholder': 'Введите сообщение или /команду…',
+  'input.bashModeHint':
+    '$ Bash-режим — вывод попадёт только в чат, модель его не увидит',
 };

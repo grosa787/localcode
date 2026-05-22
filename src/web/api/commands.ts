@@ -118,6 +118,14 @@ const BUILTIN_COMMAND_METADATA: readonly CommandSummary[] = [
       'Switch the active output style (concise / explanatory / verbose).',
     usage: '/style [name]',
   },
+  // UPDATE-CMD-SECTION
+  {
+    name: 'update',
+    description:
+      'Check for a newer LocalCode release and apply a staged update.',
+    usage: '/update | /update apply | /update download | /update skip <version>',
+  },
+  // UPDATE-CMD-SECTION-END
   {
     name: 'wakeups',
     description:

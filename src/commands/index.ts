@@ -210,6 +210,13 @@ export { createTutorialCommand } from '@/commands/cmd-tutorial';
 export type { TutorialDeps } from '@/commands/cmd-tutorial';
 // DEMO-TUTORIAL-CMD-SECTION-END
 
+// UPDATE-CMD-SECTION — `/update` wraps the auto-updater singleton so the
+// user can check / download / apply / skip a new release without
+// leaving the chat session.
+export { createUpdateCommand } from '@/commands/cmd-update';
+export type { UpdateCommandDeps, UpdaterFacade } from '@/commands/cmd-update';
+// UPDATE-CMD-SECTION-END
+
 export type {
   AgentDeps,
   AgentLLM,
@@ -435,6 +442,16 @@ export interface BuiltinCommandFactories {
    */
   tutorial?: SlashCommand;
   // DEMO-TUTORIAL-CMD-SECTION-END
+  // UPDATE-CMD-SECTION
+  /**
+   * `/update` — in-session wrapper around the auto-updater singleton.
+   * Subcommands: check (no-args), apply, download, skip <version>.
+   * Optional — wired only when the host has booted the updater
+   * singleton (which the TUI composition root in `src/app.tsx`
+   * always does when `updater.enabled !== false`).
+   */
+  update?: SlashCommand;
+  // UPDATE-CMD-SECTION-END
 }
 
 /**
@@ -523,6 +540,9 @@ export function registerBuiltinCommands(
     factories.demo,
     factories.tutorial,
     // DEMO-TUTORIAL-CMD-SECTION-END
+    // UPDATE-CMD-SECTION
+    factories.update,
+    // UPDATE-CMD-SECTION-END
   ];
   for (const cmd of ordered) {
     if (cmd) registry.register(cmd);

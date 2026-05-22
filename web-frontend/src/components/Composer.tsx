@@ -120,6 +120,13 @@ export interface ComposerProps {
   onQueue: (text: string) => void;
   /** Cancel the in-flight stream. */
   onCancel?: () => void;
+  /**
+   * Bug 2 (Wave 8C) — text of the most recent user message in the
+   * current chat. On Esc-cancel-stream the composer restores this
+   * into its local draft state so the user can edit/re-send without
+   * retyping. Optional: when absent or empty, Esc only cancels.
+   */
+  lastUserText?: string | null;
   /** Backend display label (e.g. "openai @ api.openai.com"). */
   backendLabel?: string | null;
   /** Switch provider (delegated to RestClient by the parent). */
@@ -983,9 +990,28 @@ export function Composer(props: ComposerProps): JSX.Element {
     // reach here when no popup owns the keystroke. After the parent's
     // `cancel_stream` ack the runtime flips streaming → false and is
     // immediately reusable (X5 disconnect-recovery invariant).
+    //
+    // Bug 2 (Wave 8C): On Esc-cancel we ALSO restore the last user
+    // message into the composer draft so the user can edit/re-send
+    // without retyping. The `lastUserText` prop is provided by the
+    // parent (ChatView) which has the merged messages array. When
+    // absent/empty (e.g. cancelling the first turn before any user
+    // message), Esc just cancels — no restore.
     if (e.key === 'Escape' && props.streaming) {
       e.preventDefault();
       if (props.onCancel !== undefined) props.onCancel();
+      const restore = props.lastUserText;
+      if (typeof restore === 'string' && restore.length > 0) {
+        setDraft(restore);
+        // Move caret to end once the textarea reflects the new value.
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el !== null) {
+            el.focus();
+            el.setSelectionRange(restore.length, restore.length);
+          }
+        });
+      }
       return;
     }
     // ESC-CANCEL-SECTION — end

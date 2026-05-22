@@ -141,20 +141,38 @@ export class MCPRegistry {
    * Load every server in `mcpServers` (key = server name). Returns when
    * each server has either reached `ready` or `errored`. Safe to call
    * with an empty map — does nothing and returns immediately.
+   *
+   * Idempotent against `dispose()`: once disposed, subsequent `start()`
+   * calls are no-ops (NOT throws). This prevents process crashes when
+   * the TUI's React cleanup races with the embedded `/web` server's own
+   * boot — both call `start()` on the same process-wide singleton and
+   * the loser used to crash with "already disposed".
+   *
+   * Idempotent against repeat boot: if a server name is already in the
+   * registry, the call leaves the existing slot alone instead of
+   * tearing it down and re-initialising.
    */
   async start(mcpServers: Record<string, McpServerConfig>): Promise<void> {
-    if (this.disposed) {
-      throw new Error('MCPRegistry: already disposed');
-    }
+    if (this.disposed) return;
     const names = Object.keys(mcpServers);
     if (names.length === 0) return;
     await Promise.all(
       names.map(async (name) => {
+        if (this.disposed) return;
         const cfg = mcpServers[name];
         if (cfg === undefined) return;
+        // Skip servers we already booted — start() is idempotent so
+        // double-callers (TUI + embedded web) don't double-spawn the
+        // same stdio child or double-open the same HTTP socket.
+        if (this.slots.has(name)) return;
         await this.startSlot(name, cfg);
       }),
     );
+  }
+
+  /** Is the registry disposed? Used by host code to skip re-init. */
+  isDisposed(): boolean {
+    return this.disposed;
   }
 
   /** Restart a single server by name. Idempotent. */

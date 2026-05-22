@@ -1944,6 +1944,17 @@ function ChatScreen({
   // they regret. Single Esc keeps the queue intact (the flush will
   // still run on the cancel-driven `done` event).
   //
+  // BUG FIX (Wave 8C): On Esc-cancel we ALSO restore the last user
+  // message into the InputBar so the user can edit/re-send without
+  // retyping. This requires:
+  //   1) Reading `messages` via a ref to avoid re-subscribing the
+  //      handler on every message append (and to avoid a stale
+  //      closure binding to an old `messages` snapshot).
+  //   2) Calling `setDraft(lastUserText)` — but InputBar OWNS its
+  //      buffer once mounted and ignores `value` prop changes. So we
+  //      ALSO bump `inputKey` to force a fresh InputBar mount that
+  //      hydrates `value={draft}` as the initial editor state.
+  //
   // After cancel the parent's `done` SSE handler flips `isStreaming`
   // false, so the runtime is immediately available for the next turn —
   // no extra reset needed here (mirrors the X5 disconnect-recovery
@@ -1952,6 +1963,15 @@ function ChatScreen({
   // Migrated to InputDispatcher: dispatcher only routes to mode='input'
   // when neither overlay nor approval prompt owns input, so the
   // earlier defensive bails are redundant.
+  //
+  // `messagesRef` keeps a live reference to the latest messages array
+  // so the Esc handler can scan for the last user message WITHOUT
+  // adding `messages` to its useCallback deps (which would tear down
+  // and re-create the dispatcher subscription on every chunk arrival).
+  const messagesRef = useRef<readonly Message[]>(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   useInputModeHandler(
     'input',
     useCallback(
@@ -1971,7 +1991,31 @@ function ChatScreen({
           lastEscAtRef.current = now;
         }
 
-        if (isStreaming) onCancel();
+        if (isStreaming) {
+          onCancel();
+          // Bug 2 — restore the most-recent user message into the
+          // composer so the user can edit/re-send without retyping.
+          // We scan messagesRef backwards for `role === 'user'`. Skip
+          // when no user message exists yet (cancelling the very first
+          // turn before submit — defensive; in practice unreachable).
+          const snapshot = messagesRef.current;
+          let restoreText: string | null = null;
+          for (let i = snapshot.length - 1; i >= 0; i--) {
+            const m = snapshot[i];
+            if (m !== undefined && m.role === 'user') {
+              const c = m.content;
+              if (typeof c === 'string') restoreText = c;
+              break;
+            }
+          }
+          if (restoreText !== null && restoreText.length > 0) {
+            setDraft(restoreText);
+            // Force InputBar to remount so it re-hydrates from the new
+            // `value` prop (InputBar owns its buffer once mounted and
+            // ignores `value` updates — see InputBar.tsx line ~1186).
+            setInputKey((k) => k + 1);
+          }
+        }
         return true;
       },
       [

@@ -200,6 +200,9 @@ import {
   createDemoCommand,
   createTutorialCommand,
   // DEMO-TUTORIAL-CMD-SECTION-END
+  // UPDATE-CMD-SECTION — `/update` slash command (auto-updater wrapper).
+  createUpdateCommand,
+  // UPDATE-CMD-SECTION-END
   registerBuiltinCommands,
 } from '@/commands/index';
 // DEMO-TUTORIAL-CMD-SECTION — Player ctor for the in-session `/demo`.
@@ -719,6 +722,13 @@ function App(props: AppProps): React.JSX.Element {
     skipVersion(v: string): Promise<void>;
     dismissUntil(t: number): void;
     downloadLatest(): Promise<{ ok: boolean; error?: string }>;
+    // UPDATE-CMD-SECTION — `/update` subcommands also touch these
+    // methods. Kept on the same ref so the slash command can read the
+    // current updater singleton without crossing module boundaries.
+    getState(): import('@/updater').UpdateState;
+    checkNow(): Promise<import('@/updater').UpdateState>;
+    applyPending(): Promise<{ ok: boolean; appliedVersion?: string; error?: string }>;
+    // UPDATE-CMD-SECTION-END
   } | null>(null);
   // UPDATE-OVERLAY-MOUNT-SECTION-END
 
@@ -1797,6 +1807,13 @@ function App(props: AppProps): React.JSX.Element {
       // patches `config.locale` and advances to onboarding/chat.
       if (loaded.locale === undefined) {
         setScreen('languagePicker');
+      } else if (loaded.onboarding.completed !== true) {
+        // Wave 8C bug fix: when the picker scaffolds a minimal stub
+        // before quit-before-onboarding, the next launch lands here
+        // with locale set but onboarding still incomplete. Route to
+        // onboarding instead of dropping the user into chat with a
+        // half-formed config.
+        setScreen('onboarding');
       }
       // LANGUAGE-PICKER-MOUNT-SECTION-END
     } catch (err) {
@@ -1822,7 +1839,20 @@ function App(props: AppProps): React.JSX.Element {
   // ---------- MCP registry bootstrap ----------
   // Construct once per app instance (config drives the server map).
   // fire-and-forget — failed servers record their error; they never
-  // crash the UI. Dispose on unmount so spawned subprocesses are cleaned.
+  // crash the UI.
+  //
+  // CRITICAL: this effect must NOT dispose the process-wide registry on
+  // re-render. `config` is replaced wholesale on every config mutation
+  // (locale change, model swap, provider switch, /web boot, etc.), and
+  // disposing the registry mid-session would:
+  //   1. tear down running stdio children for active MCP servers,
+  //   2. set `disposed = true` so the next `start()` becomes a no-op,
+  //   3. (historically) crash the TUI with `Unhandled rejection:
+  //      MCPRegistry: already disposed` when the embedded `/web` server
+  //      called `start()` on the same singleton.
+  // `start()` is idempotent on already-booted slots so re-running it on
+  // config changes is cheap. Disposal is handled in the separate
+  // unmount-only effect below.
   useEffect(() => {
     if (config === null) return;
     const registry = getProcessMcpRegistry();
@@ -1830,14 +1860,21 @@ function App(props: AppProps): React.JSX.Element {
     void registry.start(servers).catch(() => {
       // individual server errors are recorded inside the registry
     });
-    return () => {
-      void registry.dispose().catch(() => { /* swallow */ });
-    };
-  // config.mcpServers reference changes when config object changes, which
-  // is correct — we only restart when the top-level config object is
-  // replaced (i.e. setConfig is called).
+  // config.mcpServers reference changes when config object changes; we
+  // re-call start (idempotent) so newly-added servers boot without
+  // requiring an app restart.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
+
+  // Unmount-only cleanup: dispose the process-wide MCP registry exactly
+  // once when the TUI tears down. Empty dep array → React runs the
+  // cleanup on unmount, never on re-render. `dispose()` is itself
+  // idempotent so a duplicate signal-handler-driven dispose is harmless.
+  useEffect(() => {
+    return () => {
+      void getProcessMcpRegistry().dispose().catch(() => { /* swallow */ });
+    };
+  }, []);
 
   // PRICING-REFRESH-SECTION — kick a non-blocking refresh of the
   // OpenRouter pricing catalog on first mount. Respects the 24h
@@ -2798,6 +2835,19 @@ function App(props: AppProps): React.JSX.Element {
     });
     // DEMO-TUTORIAL-CMD-SECTION-END
 
+    // UPDATE-CMD-SECTION — wraps the updater singleton (booted by the
+    // `UPDATER-WIRE-SECTION` effect above). `getUpdater` reads from
+    // `updaterRef.current`, which is non-null whenever auto-update is
+    // enabled. When the user disables auto-update entirely the command
+    // still registers but prints a friendly "feature disabled" message.
+    const updateCmd = createUpdateCommand({
+      getUpdater: () => updaterRef.current,
+      exit: (): void => {
+        exit();
+      },
+    });
+    // UPDATE-CMD-SECTION-END
+
     registerBuiltinCommands(registry, {
       init: initCmd,
       model: modelCmd,
@@ -2868,6 +2918,9 @@ function App(props: AppProps): React.JSX.Element {
       demo: demoCmd,
       tutorial: tutorialCmd,
       // DEMO-TUTORIAL-CMD-SECTION-END
+      // UPDATE-CMD-SECTION
+      update: updateCmd,
+      // UPDATE-CMD-SECTION-END
     });
 
     // Extra built-ins added here (not in Agent 6 factories).
@@ -4942,21 +4995,62 @@ function App(props: AppProps): React.JSX.Element {
    * config blob on first launch when no file exists yet) and advances
    * to the next screen — onboarding if it hasn't completed, chat if it
    * has (the `/language` re-open path).
+   *
+   * Wave 8C bug fix: previously, on FIRST launch (no config on disk yet),
+   * the picker only stashed the locale on in-memory state. If the user
+   * quit before onboarding completed, the locale was LOST and the picker
+   * re-appeared on next launch. We now scaffold a minimal-but-valid
+   * AppConfig with sensible defaults (ollama backend, no model yet,
+   * `onboarding.completed: false`) and write it to disk IMMEDIATELY.
+   * On next launch the loaded config has `locale === 'ru'` so the
+   * picker is skipped, and `onboarding.completed === false` so the
+   * onboarding flow still runs.
    */
   const onLanguageSelect = useCallback(
     (locale: 'en' | 'ru'): void => {
       try {
-        // When no config has been written yet `configManager.update`
-        // would merge into the on-disk shape. To avoid persisting a
-        // half-formed config before onboarding completes we only patch
-        // when a config already exists; otherwise we stash the choice
-        // on the in-memory `config` state and onboarding will fold it
-        // into the final write below.
         if (configManager.exists()) {
           const merged = configManager.update({ locale });
           setConfig(merged);
-        } else if (config !== null) {
-          setConfig({ ...config, locale });
+        } else {
+          // First launch — scaffold a minimal stub with the chosen
+          // locale so the choice survives a quit-before-onboarding. The
+          // remaining fields are placeholders; onboarding overwrites
+          // them via `configManager.write(finalCfg)` on completion.
+          const stub: AppConfig = {
+            backend: { type: 'ollama', baseUrl: 'http://localhost:11434' },
+            model: { current: '', available: [] },
+            onboarding: { completed: false },
+            permissions: { autoApprove: [], profile: 'default' },
+            context: {
+              maxTokens: 8192,
+              keepAliveSeconds: 1800,
+              responseTimeoutSeconds: 300,
+              trimToolResultsAfter: 5,
+              autoCompressPercent: 0.8,
+              maxRecentMessages: 20,
+            },
+            sound: {
+              enabled: false,
+              onCompletion: true,
+              onApproval: true,
+              onError: true,
+              volume: 0.5,
+              completionFile: null,
+              approvalFile: null,
+              errorFile: null,
+            },
+            generation: {
+              temperature: 0.2,
+              topP: 0.9,
+              repeatPenalty: 1.1,
+              maxTokens: 4096,
+            },
+            outputStyle: 'concise',
+            locale,
+          };
+          configManager.write(stub);
+          setConfig(stub);
         }
       } catch {
         // Non-fatal — picker still advances. We don't surface a noisy

@@ -180,17 +180,32 @@ describe('M2 — inputKey churn replaced with resetTrigger', () => {
     expect(screen).toContain('bumpResetTrigger');
   });
 
-  test('inputKey is bumped only in the overlay-close effect', () => {
-    // Counts: declaration + exactly one setInputKey call.
+  test('inputKey is bumped only in approved sites (overlay-close + esc-cancel)', () => {
+    // Wave 8C added a second valid bump site: the ESC-CANCEL-SECTION
+    // restores the last user message into the draft and bumps the
+    // InputBar key so the new `value` prop hydrates the editor (the
+    // bar otherwise ignores `value` updates after mount). The total
+    // setInputKey call count is now 2 — anything beyond that suggests
+    // the per-chunk churn we removed in M2 is creeping back in.
     const matches = screen.match(/setInputKey\(/g);
     expect(matches).not.toBeNull();
-    expect(matches?.length ?? 0).toBe(1);
-    // The single remaining bump must live next to the overlay-close
-    // comment, so locate the call and check the preceding context.
-    const idx = screen.indexOf('setInputKey((k) => k + 1)');
-    expect(idx).toBeGreaterThan(-1);
-    const before = screen.slice(Math.max(0, idx - 400), idx);
-    expect(before).toContain('overlayActive');
+    expect(matches?.length ?? 0).toBe(2);
+    // Every bump must be near either the overlay-close comment OR
+    // the ESC-CANCEL-SECTION marker — no other churn sites allowed.
+    const bumpRegex = /setInputKey\(\(k\)\s*=>\s*k\s*\+\s*1\)/g;
+    let m: RegExpExecArray | null;
+    const contexts: string[] = [];
+    while ((m = bumpRegex.exec(screen)) !== null) {
+      contexts.push(screen.slice(Math.max(0, m.index - 600), m.index));
+    }
+    expect(contexts.length).toBeGreaterThanOrEqual(1);
+    for (const ctx of contexts) {
+      const ok =
+        ctx.includes('overlayActive') ||
+        ctx.includes('ESC-CANCEL-SECTION') ||
+        ctx.includes('InputBar to remount');
+      expect(ok).toBe(true);
+    }
   });
 
   test('InputBar accepts a resetTrigger prop and watches it via effect', () => {

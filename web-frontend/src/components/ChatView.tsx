@@ -751,6 +751,20 @@ export function ChatView(props: ChatViewProps): JSX.Element {
     [messages, streamingId, activeSession?.model],
   );
 
+  // Bug 2 (Wave 8C) — most-recent user message text. Composer reads
+  // this to restore the draft on Esc-cancel-stream so the user can
+  // edit/re-send without retyping. Memoised so the Composer only
+  // re-renders when the latest user message changes.
+  const lastUserText = useMemo<string | null>(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m !== undefined && m.role === 'user') {
+        return typeof m.content === 'string' ? m.content : null;
+      }
+    }
+    return null;
+  }, [messages]);
+
   // ---- Homemade virtualization (windowed tail) ----
   //
   // For sessions with > VIRTUALIZE_THRESHOLD messages we only mount the
@@ -989,6 +1003,7 @@ export function ChatView(props: ChatViewProps): JSX.Element {
         onSend={sendMessage}
         onQueue={onQueueMessage}
         onCancel={cancelStream}
+        lastUserText={lastUserText}
         onSwitchProvider={props.setProvider}
         onSwitchModel={onSwitchModel}
         backendLabel={props.backendLabel ?? null}

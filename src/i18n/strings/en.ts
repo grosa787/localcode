@@ -91,6 +91,11 @@ export const en = {
   'slash.noMatch': 'No commands match "{query}"',
   'slash.moreAbove': '↑ {n} more',
   'slash.moreBelow': '↓ {n} more',
+
+  // ---------- Input bar ----------
+  'input.placeholder': 'Type a message or /command…',
+  'input.bashModeHint':
+    "$ Bash mode — output goes to chat only, model won't see it",
 } as const;
 
 export type StringKey = keyof typeof en;

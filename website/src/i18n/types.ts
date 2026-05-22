@@ -13,6 +13,7 @@ export interface Strings {
     readonly installCta: string;
     readonly copy: string;
     readonly copied: string;
+    readonly versionBadge: string;
   };
   readonly install: {
     readonly heading: string;
@@ -25,6 +26,20 @@ export interface Strings {
   readonly features: {
     readonly heading: string;
     readonly tiles: ReadonlyArray<{ readonly title: string; readonly body: string; readonly icon: string }>;
+  };
+  readonly commands: {
+    readonly heading: string;
+    readonly subheading: string;
+    readonly items: ReadonlyArray<{ readonly cmd: string; readonly body: string }>;
+  };
+  readonly profiles: {
+    readonly heading: string;
+    readonly subheading: string;
+    readonly items: ReadonlyArray<{ readonly name: string; readonly body: string }>;
+  };
+  readonly privacy: {
+    readonly heading: string;
+    readonly points: ReadonlyArray<{ readonly title: string; readonly body: string }>;
   };
   readonly surfaces: {
     readonly heading: string;

@@ -66,7 +66,7 @@ const DEFAULT_WEB_PORT = 7777;
 
 // Keep in sync with package.json `version` field. CI test
 // `tests/cli/version-sync.test.ts` (TODO) will guard the drift.
-const PKG_VERSION = '0.21.0';
+const PKG_VERSION = '0.22.0';
 
 /**
  * R8 (Agent 8) — pre-mount model refresh budget. The cli does a fast,

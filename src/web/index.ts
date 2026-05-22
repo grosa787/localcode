@@ -1062,13 +1062,22 @@ export async function startWebApp(
 
   // Boot the MCP registry. Each configured server starts in parallel;
   // failures are recorded inside the registry (never thrown here).
+  //
+  // The TUI's app.tsx may already have started the same process-wide
+  // singleton — `start()` is idempotent on slots-already-present, so
+  // calling it again is cheap and won't double-spawn. We still attach a
+  // `.catch` defensively so an unexpected rejection (e.g. an upstream
+  // change in the registry contract) doesn't surface as an unhandled
+  // rejection and crash the TUI hosting the embedded server.
   const mcpRegistry = getProcessMcpRegistry();
-  void mcpRegistry.start(
-    ((): Record<string, import('@/types/global').McpServerConfig> => {
-      try { return new ConfigManager().read().mcpServers ?? {}; }
-      catch { return {}; }
-    })(),
-  );
+  void mcpRegistry
+    .start(
+      ((): Record<string, import('@/types/global').McpServerConfig> => {
+        try { return new ConfigManager().read().mcpServers ?? {}; }
+        catch { return {}; }
+      })(),
+    )
+    .catch(() => { /* swallow — individual server errors are recorded inside the registry */ });
   // Register shutdown cleanup for the MCP registry.
   const cleanupMcp = (): void => {
     void mcpRegistry.dispose().catch(() => { /* swallow */ });

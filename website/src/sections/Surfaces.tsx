@@ -83,7 +83,7 @@ function TerminalMock(): JSX.Element {
       </div>
       <pre className={styles.tuiBody}>
 {`╭──────────────────────────────────────────────╮
-│  localcode v0.20 — gpt-oss / openrouter      │
+│  localcode v0.21 — gpt-oss / openrouter      │
 ╰──────────────────────────────────────────────╯
 
 > add rate-limit middleware to /search
