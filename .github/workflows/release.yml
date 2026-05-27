@@ -50,7 +50,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: macos-13,         os_id: darwin, arch: x64,   bun_target: bun-darwin-x64 }
+          # darwin-x64 cross-compiled on macos-14 (arm64) — macos-13 intel
+          # runners are queue-bound (v0.21/v0.22 both stalled there 24h+).
+          # Bun's --target=bun-darwin-x64 produces a native x64 binary
+          # from any host; the test step is already gated on matching
+          # arch so the x64 binary isn't self-tested on arm64.
+          - { runner: macos-14,         os_id: darwin, arch: x64,   bun_target: bun-darwin-x64 }
           - { runner: macos-14,         os_id: darwin, arch: arm64, bun_target: bun-darwin-arm64 }
           - { runner: ubuntu-22.04,     os_id: linux,  arch: x64,   bun_target: bun-linux-x64 }
           - { runner: ubuntu-22.04-arm, os_id: linux,  arch: arm64, bun_target: bun-linux-arm64 }
