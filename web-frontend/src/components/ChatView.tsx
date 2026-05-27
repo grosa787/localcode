@@ -60,6 +60,9 @@ import { UsageFooter } from './UsageFooter';
 import { EmptyState } from './EmptyState';
 import { ErrorBanner } from './ErrorBanner';
 import { FileBrowser } from './FileBrowser';
+// PRESENCE-SECTION
+import { PeerPresence } from './PeerPresence';
+// PRESENCE-SECTION-END
 import { QueueErrorBanner } from './QueueErrorBanner';
 import { QueueIndicator } from './QueueIndicator';
 import { ThinkingIndicator } from './ThinkingIndicator';
@@ -185,6 +188,11 @@ export function ChatView(props: ChatViewProps): JSX.Element {
   const enqueueMessage = useStore((s) => s.enqueueMessage);
   const clearPendingQueue = useStore((s) => s.clearPendingQueue);
   const setSessionMessages = useStore((s) => s.setSessionMessages);
+  // PRESENCE-SECTION
+  const upsertPeer = useStore((s) => s.upsertPeer);
+  const removePeer = useStore((s) => s.removePeer);
+  const sweepStalePeers = useStore((s) => s.sweepStalePeers);
+  // PRESENCE-SECTION-END
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === sessionId) ?? null,
@@ -484,6 +492,24 @@ export function ChatView(props: ChatViewProps): JSX.Element {
         setThinkingStartedAt(null);
         break;
       }
+      // PRESENCE-SECTION
+      case 'presence': {
+        // Server echoed a peer's typing/leave state. typing:false +
+        // lastSeenMs in the past => treat as "left" and drop from the
+        // visible peer list immediately, otherwise upsert.
+        if (!msg.typing && Date.now() - msg.lastSeenMs > 2_000) {
+          removePeer(msg.sessionId, msg.userId);
+        } else {
+          upsertPeer(msg.sessionId, {
+            userId: msg.userId,
+            displayName: msg.displayName,
+            typing: msg.typing,
+            lastSeenMs: msg.lastSeenMs,
+          });
+        }
+        break;
+      }
+      // PRESENCE-SECTION-END
       case 'provider_changed':
       case 'hello_ok':
       case 'pong':
@@ -499,6 +525,16 @@ export function ChatView(props: ChatViewProps): JSX.Element {
     if (sessionId === null) return;
     setSessionMessages(sessionId, messages);
   }, [sessionId, messages, setSessionMessages]);
+
+  // PRESENCE-SECTION
+  // Age out peers whose heartbeat stopped — guards against a dropped
+  // disconnect frame. Cheap polling tick (5 s) so a peer who closes
+  // their browser ungracefully disappears within ~35 s of silence.
+  useEffect(() => {
+    const handle = window.setInterval(() => sweepStalePeers(), 5_000);
+    return (): void => window.clearInterval(handle);
+  }, [sweepStalePeers]);
+  // PRESENCE-SECTION-END
 
   // Mirror streamingId into a ref so the closure inside `message_committed`
   // sees the latest value without re-running the handler.
@@ -647,6 +683,25 @@ export function ChatView(props: ChatViewProps): JSX.Element {
     props.wsSend({ type: 'cancel_stream', sessionId });
   }, [sessionId, props]);
   // ESC-CANCEL-SECTION — end
+
+  // PRESENCE-SECTION
+  const myPresenceUserId = useStore((s) => s.myPresenceUserId);
+  const myPresenceDisplayName = useStore((s) => s.myPresenceDisplayName);
+  const sendPresence = useCallback(
+    (typing: boolean): void => {
+      if (sessionId === null) return;
+      props.wsSend({
+        type: 'presence',
+        sessionId,
+        userId: myPresenceUserId,
+        displayName: myPresenceDisplayName,
+        typing,
+        lastSeenMs: Date.now(),
+      });
+    },
+    [sessionId, props, myPresenceUserId, myPresenceDisplayName],
+  );
+  // PRESENCE-SECTION-END
 
   // AGENT-REPLY-SECTION
   // Composer reply-mode binding. When `agentReplyTarget` is set in the
@@ -882,6 +937,10 @@ export function ChatView(props: ChatViewProps): JSX.Element {
       /* RESPONSIVE-SECTION — exposes the active breakpoint for CSS. */
       data-viewport={chatViewport.breakpoint}
     >
+      {/* PRESENCE-SECTION — connected peers strip. Renders nothing
+          when no other tabs are connected to this session. */}
+      {sessionId !== null ? <PeerPresence sessionId={sessionId} /> : null}
+      {/* PRESENCE-SECTION-END */}
       <div
         className={styles.scroller}
         ref={scrollerRef}
@@ -1011,6 +1070,9 @@ export function ChatView(props: ChatViewProps): JSX.Element {
         // routes typed text via `relay_to_agent` instead of `send_message`.
         agentReply={agentReplyComposerProps}
         // /AGENT-REPLY-SECTION
+        // PRESENCE-SECTION — multi-user typing broadcaster.
+        onTyping={sendPresence}
+        // PRESENCE-SECTION-END
       />
 
       {/* Token-usage caption strip — sits at the very bottom of the chat

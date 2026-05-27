@@ -126,10 +126,31 @@ export type PermissionProfile = z.infer<typeof PermissionProfileSchema>;
  * `[permissions]` section parse cleanly and get filled in on first
  * read.
  */
+// BATCH-APPROVAL-SECTION
+// `batchApprovalThreshold` controls the unified batch-approval dialog
+// fired when the LLM emits N or more mutating tool calls in a single
+// turn (typical for multi-file refactors). Default 3 — below that the
+// historical per-call approval prompt fires sequentially (fewer
+// prompts = lower cognitive cost than a modal for one or two calls).
+// Range 1..99: setting to 1 effectively makes every mutating call open
+// the batch UI (treats each as a "batch of one"); setting to 99
+// disables the batch UI in practice. Old configs without the field
+// fall through to the default via Zod.
+// BATCH-APPROVAL-SECTION-END
 export const PermissionsSchema = z
   .object({
     autoApprove: z.array(AutoApprovableToolSchema).default([]),
     profile: PermissionProfileSchema.default('default'),
+    // BATCH-APPROVAL-SECTION
+    // Optional in BOTH input AND output (no `.default`) so the matching
+    // `PermissionsConfig.batchApprovalThreshold` on the .d.ts side stays
+    // `number | undefined` and the bidirectional `_ConfigAssert` witness
+    // still holds. Consumers read with `?? 3` to apply the default —
+    // this keeps every existing literal
+    // `{ autoApprove: [], profile: 'default' }` in tests / onboarding /
+    // web API helpers / project-rc overrides type-checking unchanged.
+    batchApprovalThreshold: z.number().int().min(1).max(99).optional(),
+    // BATCH-APPROVAL-SECTION-END
   })
   .default({ autoApprove: [], profile: 'default' });
 
@@ -429,6 +450,55 @@ export const SecuritySchema = z
 export type SecurityConfig = z.infer<typeof SecuritySchema>;
 // SECURITY-CONFIG-SECTION-END ---------------------------------------
 
+// SANDBOX-CONFIG-SECTION --------------------------------------------
+//
+// `run_command` execution sandbox. Wraps every shell invocation in an
+// OS-native isolation envelope (sandbox-exec on macOS, firejail on
+// Linux, optional docker) so even auto-approved commands cannot freely
+// write outside the project root or open network sockets.
+//
+// All fields default to "safe defaults that preserve existing
+// behaviour":
+//   - `backend = 'auto'` picks the best native sandbox for the host
+//     and silently falls back to passthrough when unavailable.
+//   - `allowNetwork = true` matches the pre-sandbox default — turning
+//     this OFF requires explicit opt-in because most dev commands need
+//     network (`bun install`, `git clone`, …).
+//   - `allowWritePaths = []` means writes are scoped to the project
+//     root (plus the platform's `/tmp` scratch zone). Add absolute
+//     paths to widen this list.
+//   - `timeoutMs = 120_000` is a generous 2-minute cap (the legacy
+//     hard-coded `run_command` timeout is 30s; this is the upper bound
+//     the runner enforces — the existing 30s envelope still applies on
+//     top via execa).
+//
+// Whole section is optional at the typed root so old TOMLs round-trip
+// cleanly; absence yields the defaults above via Zod.
+export const SandboxConfigSchema = z
+  .object({
+    backend: z
+      .enum(['auto', 'sandbox-exec', 'firejail', 'docker', 'none'])
+      .default('auto'),
+    allowNetwork: z.boolean().default(true),
+    allowWritePaths: z.array(z.string()).default([]),
+    timeoutMs: z.number().int().positive().default(120_000),
+    /**
+     * Image used by the `docker` backend. Defaults to `alpine:latest` —
+     * the smallest image shipping a POSIX `sh`. Ignored by other
+     * backends. Optional.
+     */
+    dockerImage: z.string().min(1).optional(),
+  })
+  .default({
+    backend: 'auto',
+    allowNetwork: true,
+    allowWritePaths: [],
+    timeoutMs: 120_000,
+  });
+
+export type SandboxConfig = z.infer<typeof SandboxConfigSchema>;
+// SANDBOX-CONFIG-SECTION-END ----------------------------------------
+
 // MCP-CONFIG-SECTION ------------------------------------------------
 // MCP (Model Context Protocol) servers. Optional; absence = dormant
 // registry, zero overhead. Each entry boots a subprocess (stdio) or
@@ -666,6 +736,55 @@ export const FirstRunSchema = z
 export type FirstRunConfig = z.infer<typeof FirstRunSchema>;
 // FIRST-RUN-CONFIG-SECTION-END --------------------------------------
 
+// TELEMETRY-CONFIG-SECTION ------------------------------------------
+//
+// Opt-in local-only metrics aggregation toggle. Drives the `/metrics`
+// dashboard (tool success rate, cache-hit %, avg turn duration, cost
+// per model, top expensive sessions). Data is aggregated entirely from
+// already-on-disk SQLite + crash-journal artefacts and NEVER leaves the
+// user's machine — there is no network egress path. The block is
+// off-by-default to satisfy the "telemetry must be explicit consent"
+// posture: when `enabled = false` the aggregator returns a synthetic
+// "disabled" snapshot and never reads journals.
+//
+//   - `enabled`        — master on/off switch. Default `false` (opt-in).
+//   - `retentionDays`  — bound the lookback window for journal scans +
+//                        SQL aggregates. Range 1..365. Default 30.
+//
+// Whole section is optional at the typed root so old TOMLs that predate
+// the feature round-trip cleanly; Zod fills the defaults when absent.
+export const TelemetrySchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    retentionDays: z.number().int().min(1).max(365).default(30),
+  })
+  .default({
+    enabled: false,
+    retentionDays: 30,
+  });
+
+export type TelemetryConfig = z.infer<typeof TelemetrySchema>;
+// TELEMETRY-CONFIG-SECTION-END --------------------------------------
+
+// IMPORT-FIRST-RUN-SECTION --------------------------------------------
+//
+// First-run migration prompt state. Currently only carries the
+// "dismissed" flag for the Claude Code import prompt. Mirrored in
+// `AppConfig.migration` (`src/types/global.d.ts`).
+//
+//   - `claudeCodeDismissed` — `true` once the user picked "Not now" or
+//                             "Never ask" on the first-run prompt.
+//                             Default `false`.
+export const MigrationSchema = z
+  .object({
+    claudeCodeDismissed: z.boolean().default(false),
+  })
+  .default({
+    claudeCodeDismissed: false,
+  });
+export type MigrationConfig = z.infer<typeof MigrationSchema>;
+// IMPORT-FIRST-RUN-SECTION-END ----------------------------------------
+
 // ---------- Root schema ----------
 
 export const ConfigSchema = z.object({
@@ -693,6 +812,12 @@ export const ConfigSchema = z.object({
   // TOML yields the defaults via the schema's own `.default(...)`.
   security: SecuritySchema.optional(),
   // SECURITY-CONFIG-SECTION-END
+  // SANDBOX-CONFIG-SECTION — `run_command` sandbox layer. Optional at
+  // the typed root; the schema's own `.default(...)` fills in the safe
+  // defaults (backend='auto', allowNetwork=true, no extra write paths)
+  // when the section is absent from disk.
+  sandbox: SandboxConfigSchema.optional(),
+  // SANDBOX-CONFIG-SECTION-END
   // MCP servers — optional. Empty/missing = dormant registry.
   mcpServers: McpServersConfigSchema.optional(),
   // Statusline customization — optional. Absence yields the default
@@ -733,6 +858,17 @@ export const ConfigSchema = z.object({
   // composition root patches it to `true` on overlay dismiss.
   firstRun: FirstRunSchema.optional(),
   // FIRST-RUN-CONFIG-SECTION-END
+  // TELEMETRY-CONFIG-SECTION — opt-in local-only metrics aggregation
+  // toggle. Optional so old TOMLs round-trip cleanly; Zod fills in
+  // `{ enabled: false, retentionDays: 30 }` when the section is absent.
+  // The `/metrics` dashboard reads this gate before touching any
+  // SessionManager / journal data.
+  telemetry: TelemetrySchema.optional(),
+  // TELEMETRY-CONFIG-SECTION-END
+  // IMPORT-FIRST-RUN-SECTION — migration prompt dismissal state.
+  // Optional; absence yields the safe default (not dismissed).
+  migration: MigrationSchema.optional(),
+  // IMPORT-FIRST-RUN-SECTION-END
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

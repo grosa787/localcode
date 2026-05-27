@@ -1,0 +1,70 @@
+# Keep the Docker build context minimal. The builder stage only needs
+# package.json + bun.lock + src/ + web-frontend/{src,public,index.html,vite.config.*,tsconfig.*}
+# + scripts/embed-web.ts + tsconfig.json. Anything else is dead weight.
+
+# ---- vcs / ci / editor noise ----
+.git/
+.gitignore
+.gitattributes
+.github/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- build outputs (regenerated inside the image) ----
+dist/
+dist-web/
+**/dist/
+**/dist-web/
+*.tsbuildinfo
+.vite/
+.cache/
+
+# ---- dependencies (re-installed inside the image) ----
+node_modules/
+**/node_modules/
+
+# ---- runtime / user state (must NEVER leak into the image) ----
+.localcode/
+.env
+.env.*
+*.pem
+*.key
+credentials*
+
+# ---- harness / agent transcripts ----
+.omc/
+.claude/
+AGENTS_LOG.md
+ROADMAP.md
+FIXES_PLAN.md
+
+# ---- docs / packaging / website (not needed at runtime) ----
+docs/
+website/
+packaging/
+assets/
+*.md
+
+# ---- tests / coverage ----
+tests/
+coverage/
+.nyc_output/
+*.lcov
+
+# ---- temp ----
+tmp/
+.tmp/
+*.tmp
+*.log
+
+# ---- platform-specific scripts not used by the Docker build ----
+install.sh
+scripts/migrate-to-private.sh
+scripts/strip-public-repo.sh
+scripts/package-release.sh
+
+# ---- the Dockerfile + this file shouldn't be in the build context ----
+Dockerfile
+.dockerignore

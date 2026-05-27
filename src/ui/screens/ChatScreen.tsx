@@ -47,6 +47,14 @@ import SlashMenu from '../components/SlashMenu.js';
 import DiffView from '../components/DiffView.js';
 import ApprovalPrompt from '../components/ApprovalPrompt.js';
 import ToolCallBlock, { type ToolCallStatus } from '../components/ToolCallBlock.js';
+// PLAN-MODE-BADGE-MOUNT-SECTION — render the inline "[BLOCKED IN PLAN]"
+// chip in place of the standard tool-error body whenever the executor
+// surfaces the plan-mode short-circuit error string (see
+// `src/llm/tool-executor.ts` PLAN-MODE-BLOCK-SECTION). The badge sits
+// next to the existing `ToolCallBlock` so the user still sees the call
+// trace + arguments — only the error body is swapped.
+import { PlanModeBlockedBadge } from '../overlays/PlanModeOverlay.js';
+// PLAN-MODE-BADGE-MOUNT-SECTION-END
 import StreamOutput from '../components/StreamOutput.js';
 import ThinkingSpinner from '../components/ThinkingSpinner.js';
 import { ThinkingBlock } from '../components/ThinkingBlock.js';
@@ -136,6 +144,18 @@ import { useTerminalWidth } from '../hooks/useTerminalWidth.js';
 // every label without re-mounting.
 import { useT } from '../../i18n/index.js';
 // LOCALE-APPLY-SECTION-END
+// CLIPBOARD-PASTE-SECTION (imports)
+// Node-side helpers for the Ctrl+V clipboard-image bridge. `fs` /
+// `path` / `os` are used to land the captured PNG into
+// `~/.localcode/clipboard-images/<ts>-<id>.png` so the InputBar's
+// existing bare-path auto-attach (`promoteBareImagePaths`) can swap it
+// for an image PasteToken on the next submit. The actual clipboard
+// read happens in `@/util/clipboard`, which is mockable for tests.
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { readClipboardImage } from '@/util/clipboard';
+// CLIPBOARD-PASTE-SECTION (imports end)
 import { dimSeparator, noxPalette, textMuted } from '../theme.js';
 import type { Todo } from '../../sessions/session-manager.js';
 import type {
@@ -507,6 +527,25 @@ export interface ChatScreenProps {
    */
   readonly proactivePanelVisible?: boolean;
   // PROACTIVE-MOUNT-SECTION-END
+  // COST-FORECAST-SECTION (start) — next-turn cost preview chip rendered
+  // directly above the InputBar. The host computes the inputs via
+  // `estimateNextTurn` (`src/llm/cost-estimator.ts`) so this screen stays
+  // presentational. Both fields are optional — when both are omitted
+  // (or the provider is local), the chip self-hides.
+  /** Central USD estimate for the next assistant reply. */
+  readonly nextTurnEstimateUsd?: number;
+  /** True when the model has no known pricing — chip renders `~?`. */
+  readonly nextTurnEstimateUnknown?: boolean;
+  // COST-FORECAST-SECTION (end)
+  // COST-FOOTER-PROPS-SECTION (start) — cumulative spend chips threaded
+  // into the `UsageFooter` rendered beneath the most-recent assistant
+  // turn. The host computes both values via
+  // `SessionManager.getSessionCost(sid)` + `getTodayCost()` and passes
+  // them through. The footer self-hides when both are zero or omitted,
+  // so the chat tail stays clean for local-only sessions.
+  readonly sessionCostUsd?: number;
+  readonly todayCostUsd?: number;
+  // COST-FOOTER-PROPS-SECTION (end)
 }
 
 /**
@@ -591,6 +630,82 @@ function StreamTimerImpl({
 // the default referential comparator is correct.
 const StreamTimer = React.memo(StreamTimerImpl);
 
+// COST-FORECAST-SECTION (component) ----------
+//
+// One-line cost preview rendered directly above the InputBar so users
+// on paid backends see what their next reply will cost BEFORE pressing
+// Enter. Stateless and entirely prop-driven; the host (`app.tsx`)
+// runs the actual `estimateNextTurn` call and threads the result down.
+//
+// Colour ladder: <$0.01 = calm highlight, <$0.10 = yellow caution,
+// >=$0.10 = red. When `unknown` is true, the chip renders a muted
+// `~? next turn` so the absence of pricing is visible instead of
+// silently zero.
+//
+// The chip self-hides when both `estimateUsd` and `unknown` are
+// absent (the common case: local backend, no pricing context, etc.).
+// The trailing label is accepted via the optional `nextTurnLabel`
+// prop so the i18n team (9A) can swap it without touching this
+// component's logic.
+
+interface CostForecastChipProps {
+  readonly estimateUsd: number | undefined;
+  readonly unknown: boolean | undefined;
+  /** Optional translated trailing label. Defaults to `next turn`. */
+  readonly nextTurnLabel?: string;
+}
+
+function formatForecastUsd(usd: number): string {
+  if (!Number.isFinite(usd) || usd < 0) return '$0.0000';
+  if (usd === 0) return '$0.00';
+  if (usd < 0.001) return '$0.0000';
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+function CostForecastChipImpl({
+  estimateUsd,
+  unknown,
+  nextTurnLabel,
+}: CostForecastChipProps): React.JSX.Element | null {
+  const labelTail = nextTurnLabel ?? 'next turn';
+
+  if (unknown === true) {
+    return (
+      <Box paddingX={1}>
+        <Text color={textMuted} dimColor>
+          {`~? ${labelTail}`}
+        </Text>
+      </Box>
+    );
+  }
+  if (
+    estimateUsd === undefined ||
+    !Number.isFinite(estimateUsd) ||
+    estimateUsd < 0.001
+  ) {
+    return null;
+  }
+
+  let colour: string;
+  if (estimateUsd >= 0.1) {
+    colour = '#fca5a5';
+  } else if (estimateUsd >= 0.01) {
+    colour = noxPalette.yellow;
+  } else {
+    colour = noxPalette.highlight;
+  }
+
+  return (
+    <Box paddingX={1}>
+      <Text color={colour}>{`~${formatForecastUsd(estimateUsd)} ${labelTail}`}</Text>
+    </Box>
+  );
+}
+
+const CostForecastChip = React.memo(CostForecastChipImpl);
+// COST-FORECAST-SECTION (component end) ----------
+
 /**
  * R16 (Agent 4) — structural narrowing for the optional `thinking`
  * field that Agent 8 R12 attaches to assistant messages via
@@ -619,6 +734,13 @@ interface MessageRowProps {
     readonly systemNotes: boolean;
   };
   // OUTPUT-FILTER-SECTION (end)
+  // COST-FOOTER-PROPS-SECTION (start) — cumulative session + today USD
+  // chips shown only on the LAST assistant message (so the chat tail
+  // stays clean for older turns). Both fields self-hide when zero/omitted.
+  readonly sessionCostUsd?: number;
+  readonly todayCostUsd?: number;
+  readonly isLastMessage?: boolean;
+  // COST-FOOTER-PROPS-SECTION (end)
 }
 
 function MessageRowImpl({
@@ -627,6 +749,11 @@ function MessageRowImpl({
   modelName,
   sessionTotalOut,
   outputFilters,
+  // COST-FOOTER-PROPS-SECTION (start)
+  sessionCostUsd,
+  todayCostUsd,
+  isLastMessage,
+  // COST-FOOTER-PROPS-SECTION (end)
 }: MessageRowProps): React.JSX.Element | null {
   // FILTER-RENDER-SECTION (start) — output-filter view guards. These
   // affect render only; persisted message data is untouched.
@@ -690,6 +817,16 @@ function MessageRowImpl({
               tokensOutput={message.tokensOutput}
               durationMs={message.durationMs}
               sessionTotalOut={sessionTotalOut}
+              // COST-FOOTER-PROPS-SECTION (mount) — only annotate the
+              // most-recent assistant message so older turns don't
+              // grow noisier on every committed row.
+              {...(isLastMessage === true
+                ? {
+                    sessionCostUsd: sessionCostUsd,
+                    todayCostUsd: todayCostUsd,
+                  }
+                : {})}
+              // COST-FOOTER-PROPS-SECTION (mount end)
             />
           )}
           {/* FILTER-RENDER-SECTION — tool calls hidden under the 'clean'
@@ -698,6 +835,16 @@ function MessageRowImpl({
             <Box flexDirection="column" marginTop={message.content.length > 0 ? 1 : 0} paddingX={1}>
               {message.toolCalls.map((tc: ToolCall) => {
                 const st = toolCallStates?.get(tc.id);
+                // PLAN-MODE-BADGE-MOUNT-SECTION — when the executor's
+                // plan-mode short-circuit fired (see PLAN-MODE-BLOCK-SECTION
+                // in `src/llm/tool-executor.ts`) the error body starts
+                // with the literal "Plan mode active" string. Render
+                // the inline badge in place of the raw error so the
+                // user sees a clean "[BLOCKED IN PLAN] <tool>" chip.
+                const planBlocked =
+                  typeof st?.error === 'string' &&
+                  st.error.startsWith('Plan mode active');
+                // PLAN-MODE-BADGE-MOUNT-SECTION-END
                 return (
                   <Box key={tc.id} flexDirection="column">
                     <ToolCallBlock
@@ -705,8 +852,18 @@ function MessageRowImpl({
                       args={tc.arguments}
                       status={st?.status ?? 'pending'}
                       output={st?.output}
-                      error={st?.error}
+                      // PLAN-MODE-BADGE-MOUNT-SECTION — suppress the
+                      // raw error text when we render the badge below.
+                      error={planBlocked ? undefined : st?.error}
+                      // PLAN-MODE-BADGE-MOUNT-SECTION-END
                     />
+                    {/* PLAN-MODE-BADGE-MOUNT-SECTION (start) */}
+                    {planBlocked && (
+                      <Box paddingLeft={2}>
+                        <PlanModeBlockedBadge toolName={tc.name} />
+                      </Box>
+                    )}
+                    {/* PLAN-MODE-BADGE-MOUNT-SECTION-END */}
                     {st?.diffPreview !== undefined && st.diffPreview.length > 0 && (
                       <Box paddingLeft={2} marginTop={1}>
                         <InlineDiffView
@@ -786,6 +943,11 @@ function messageRowPropsAreEqual(
   if (prev.modelName !== next.modelName) return false;
   if (prev.sessionTotalOut !== next.sessionTotalOut) return false;
   if (prev.toolCallStates !== next.toolCallStates) return false;
+  // COST-FOOTER-PROPS-SECTION — cumulative cost props feed the UsageFooter.
+  if (prev.sessionCostUsd !== next.sessionCostUsd) return false;
+  if (prev.todayCostUsd !== next.todayCostUsd) return false;
+  if (prev.isLastMessage !== next.isLastMessage) return false;
+  // COST-FOOTER-PROPS-SECTION-END
   // OUTPUT-FILTER-SECTION — refresh on any filter change so render
   // guards re-evaluate. The slice is rebuilt by useMemo in the parent
   // only when its inputs change, so referential equality is safe.
@@ -1158,6 +1320,14 @@ function ChatScreen({
   proactiveSuggestion,
   proactivePanelVisible = true,
   // PROACTIVE-MOUNT-SECTION-END
+  // COST-FORECAST-SECTION (destructure)
+  nextTurnEstimateUsd,
+  nextTurnEstimateUnknown,
+  // COST-FORECAST-SECTION (destructure end)
+  // COST-FOOTER-PROPS-SECTION (destructure)
+  sessionCostUsd,
+  todayCostUsd,
+  // COST-FOOTER-PROPS-SECTION (destructure end)
 }: ChatScreenProps): React.JSX.Element {
   // LOCALE-APPLY-SECTION — surface strings come from the active locale
   // via `useT()`. Re-renders automatically when the parent's
@@ -2099,6 +2269,131 @@ function ChatScreen({
     ),
   );
 
+  // CLIPBOARD-PASTE-SECTION
+  // `draftRef` mirrors the controlled draft string so the async
+  // clipboard handler below can read the latest snapshot without
+  // adding `draft` to its useCallback deps (which would re-create the
+  // dispatcher subscription on every keystroke — see the comparable
+  // `messagesRef` rationale above).
+  const draftRef = useRef<string>(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  // Ctrl+V — capture an image off the system clipboard and route it
+  // through the existing image-attach pipeline.
+  //
+  // Background: terminals do NOT propagate OS clipboard images on a
+  // native paste (Cmd+V on macOS / Shift+Insert on Linux) — only text
+  // crosses the boundary. So when the user has a screenshot on their
+  // clipboard and pastes, the terminal drops the image entirely. To
+  // attach it we have to reach OUT to the clipboard ourselves. Ctrl+V
+  // is reachable inside the TTY (terminals only intercept the platform-
+  // native paste combo, not Ctrl+V), so we own it as the "attach
+  // clipboard image" hotkey.
+  //
+  // Flow:
+  //   1. `readClipboardImage()` returns null on every "no image / tool
+  //      missing / unsupported platform" case. We surface a short
+  //      toast and stop — no other Ctrl+V semantics in this codebase
+  //      so falling through silently is fine.
+  //   2. On success we write the bytes to
+  //      `~/.localcode/clipboard-images/<ts>-<short-id>.<ext>` and
+  //      append the absolute path to the current draft.
+  //   3. Forcing an InputBar remount via `inputKey` makes InputBar
+  //      re-hydrate `value={draft}` as its initial editor state. The
+  //      existing bare-path auto-promote (`promoteBareImagePaths`)
+  //      then sniffs the file on Enter and substitutes an image
+  //      PasteToken — same end-to-end pipeline as a Finder drag-drop.
+  //   4. The InputBar's `composeFullText` appends the standard
+  //      fetch_image hint when ANY image token is in the composition,
+  //      so non-Anthropic models still get the cue.
+  //
+  // Errors all degrade to a toast — we never crash the composer.
+  // Async work happens inside the handler; we ignore the returned
+  // promise (the dispatcher signature is sync) and let the chain
+  // self-resolve.
+  const handleClipboardPaste = useCallback(async (): Promise<void> => {
+    let image: Awaited<ReturnType<typeof readClipboardImage>> = null;
+    try {
+      image = await readClipboardImage();
+    } catch {
+      image = null;
+    }
+    if (image === null) {
+      // Nothing to attach. Surface a soft toast so the user knows the
+      // keystroke landed but the clipboard was empty / unsupported.
+      showQueueToast(t('chat.toast.clipboardNoImage'));
+      return;
+    }
+    const dir = path.join(os.homedir(), '.localcode', 'clipboard-images');
+    let fullpath: string;
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const ext = image.mime === 'image/png' ? 'png' : 'jpg';
+      const stamp = Date.now();
+      // Short id keeps filenames tidy; collisions across same-ms
+      // captures are negligible at a human-paced Ctrl+V.
+      const id = Math.random().toString(36).slice(2, 10);
+      fullpath = path.join(dir, `${stamp}-${id}.${ext}`);
+      fs.writeFileSync(fullpath, image.bytes);
+    } catch {
+      showQueueToast(t('chat.toast.clipboardSaveFailed'));
+      return;
+    }
+    // CLIPBOARD-SUBMIT-SECTION
+    // Ctrl+V semantics: "attach the clipboard image AND send the
+    // current draft together as one turn". We compose the existing
+    // text (`draft`) + the saved file path on its own line, then
+    // route through `submit()` exactly as if the user had typed and
+    // pressed Enter.
+    //
+    // Why not just hydrate the InputBar buffer? InputBar deliberately
+    // ignores `value` prop updates after mount (it owns its editor
+    // state once mounted), so the only way to inject the path into
+    // the visible buffer would be a key bump — and `setInputKey` is
+    // an approved-sites-only list (see
+    // `tests/ui/chatscreen-input-gating.test.ts` M2). Auto-submitting
+    // on Ctrl+V gives a clean "attach + send" UX in one keystroke,
+    // matches user expectation (Ctrl+V already implies "do the paste
+    // action now"), and avoids the inputKey-churn guardrail entirely.
+    //
+    // `submit()` routes through `classifySubmit` → text branch → the
+    // pendingApproval / isStreaming gates → onSubmit. Bare paths flow
+    // to the model as text, and `app.tsx` (see the
+    // `User pasted an image URL` hint there) recognises image paths
+    // and surfaces a `fetch_image` cue to non-vision models.
+    const savedPath = fullpath;
+    const draftSnapshot = draftRef.current;
+    const payload =
+      draftSnapshot.trim().length === 0
+        ? savedPath
+        : `${draftSnapshot}\n${savedPath}`;
+    submit(payload);
+    // CLIPBOARD-SUBMIT-SECTION-END
+    showQueueToast(t('chat.toast.clipboardImageAttached'));
+  }, [showQueueToast, submit, t]);
+
+  useInputModeHandler(
+    'input',
+    useCallback(
+      ({ input, key }) => {
+        if (!key.ctrl) return;
+        // ink reports Ctrl+V as input === 'v' with key.ctrl set; on
+        // some terminals the raw SYN byte (\x16) lands instead.
+        // Match either so the binding is robust across emulators.
+        if (input !== 'v' && input !== '\x16') return;
+        // Fire-and-forget — the dispatcher signature is sync, the
+        // clipboard read is async. Errors are swallowed inside the
+        // handler so an unhandled rejection can't crash the TUI.
+        void handleClipboardPaste();
+        return true;
+      },
+      [handleClipboardPaste],
+    ),
+  );
+  // CLIPBOARD-PASTE-SECTION-END
+
   // NAV-MODES-SECTION — Ctrl-key handlers for the three navigation
   // aids. All three subscribe to `'input'` mode (the dispatcher will
   // skip them automatically while an overlay or approval prompt owns
@@ -2830,6 +3125,9 @@ function ChatScreen({
                       ? staticMessages[staticMessages.length - 1]
                       : pendingMessages[i - 1];
                   const showSep = prev !== undefined && prev.role !== m.role;
+                  // COST-FOOTER-PROPS-SECTION — only annotate the most
+                  // recent pending row with cumulative cost data.
+                  const isLast = i === pendingMessages.length - 1;
                   return (
                     <Box key={m.id} flexDirection="column">
                       {showSep && <Separator />}
@@ -2839,6 +3137,11 @@ function ChatScreen({
                         modelName={effectiveModelName}
                         sessionTotalOut={sessionTotalOut}
                         outputFilters={resolvedFilters}
+                        // COST-FOOTER-PROPS-SECTION (thread)
+                        sessionCostUsd={sessionCostUsd}
+                        todayCostUsd={todayCostUsd}
+                        isLastMessage={isLast}
+                        // COST-FOOTER-PROPS-SECTION (thread end)
                       />
                     </Box>
                   );
@@ -3013,6 +3316,17 @@ function ChatScreen({
             visible={proactivePanelVisible}
           />
           {/* PROACTIVE-MOUNT-SECTION-END */}
+
+          {/* COST-FORECAST-SECTION (render) — next-turn cost preview
+              chip rendered directly above the InputBar. Self-hides
+              when the active backend is local or the estimate is
+              below the noise floor. See the component definition
+              earlier in this file for the colour ladder + format. */}
+          <CostForecastChip
+            estimateUsd={nextTurnEstimateUsd}
+            unknown={nextTurnEstimateUnknown}
+          />
+          {/* COST-FORECAST-SECTION (render end) */}
 
           {/* Bug #2 fix: input row is now edge-to-edge. NoxMini and the
               two `<Box width={1} />` spacers were dropped so the

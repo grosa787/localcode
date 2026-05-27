@@ -155,6 +155,15 @@ export interface ComposerProps {
     onExitReply: () => void;
   } | null;
   // /AGENT-REPLY-SECTION
+  // PRESENCE-SECTION
+  /**
+   * Multi-user collaboration typing broadcaster. Composer fires this
+   * with `true` on keystroke (throttled 1 s) and `false` after 3 s of
+   * idle keystrokes. Optional — when omitted, no presence is broadcast
+   * (single-user / non-web surfaces).
+   */
+  onTyping?: (typing: boolean) => void;
+  // PRESENCE-SECTION-END
 }
 
 const MAX_LINES = 10;
@@ -231,6 +240,19 @@ export function Composer(props: ComposerProps): JSX.Element {
 
   const slashCommands = useStore((s) => s.slashCommands);
   const openSlashCommands = useStore((s) => s.openSlashCommands);
+  // PRESENCE-SECTION
+  const peersBySession = useStore((s) => s.peers);
+  const myPresenceUserId = useStore((s) => s.myPresenceUserId);
+  const activeSessionIdForPresence = useStore((s) => s.activeSessionId);
+  const typingPeers = useMemo(() => {
+    if (activeSessionIdForPresence === null) return [];
+    const bucket = peersBySession[activeSessionIdForPresence];
+    if (bucket === undefined) return [];
+    return Object.values(bucket).filter(
+      (p) => p.typing && p.userId !== myPresenceUserId,
+    );
+  }, [peersBySession, activeSessionIdForPresence, myPresenceUserId]);
+  // PRESENCE-SECTION-END
   const composerDraft = useStore((s) => s.composerDraft);
   const setComposerDraft = useStore((s) => s.setComposerDraft);
   const pushToast = useStore((s) => s.pushToast);
@@ -536,6 +558,61 @@ export function Composer(props: ComposerProps): JSX.Element {
       textareaRef.current?.focus();
     }
   }, [props.disabled]);
+
+  // PRESENCE-SECTION
+  // Multi-user typing broadcast. Fires `onTyping(true)` at most every
+  // 1 s while the user is typing, and `onTyping(false)` after 3 s of
+  // idleness. We keep the effect cheap by only running when `draft`
+  // changes — the dependency on `onTyping` is stable (passed from the
+  // parent via useCallback) so it doesn't churn the effect.
+  const lastTypingSentAtRef = useRef(0);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastDraftRef = useRef('');
+  const onTypingProp = props.onTyping;
+  useEffect(() => {
+    if (onTypingProp === undefined) return;
+    // First useEffect call wires the initial state — skip the broadcast.
+    const prev = lastDraftRef.current;
+    lastDraftRef.current = draft;
+    if (prev === draft) return;
+    // Cleared the textarea entirely (e.g. submitted) — flip typing off.
+    if (draft.length === 0 && prev.length > 0) {
+      if (idleTimerRef.current !== null) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      lastTypingSentAtRef.current = 0;
+      onTypingProp(false);
+      return;
+    }
+    if (draft.length === 0) return;
+    const now = Date.now();
+    if (now - lastTypingSentAtRef.current >= 1000) {
+      lastTypingSentAtRef.current = now;
+      onTypingProp(true);
+    }
+    // Arm the idle timer — last keystroke wins.
+    if (idleTimerRef.current !== null) {
+      clearTimeout(idleTimerRef.current);
+    }
+    idleTimerRef.current = setTimeout(() => {
+      idleTimerRef.current = null;
+      lastTypingSentAtRef.current = 0;
+      onTypingProp(false);
+    }, 3_000);
+  }, [draft, onTypingProp]);
+
+  // Tear down the idle timer on unmount so we don't fire onTyping after
+  // the Composer has been replaced.
+  useEffect(() => {
+    return (): void => {
+      if (idleTimerRef.current !== null) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+    };
+  }, []);
+  // PRESENCE-SECTION-END
 
   const knownCommandNames = useMemo<Set<string>>(
     () => new Set(slashCommands.map((c) => c.name)),
@@ -1350,6 +1427,23 @@ export function Composer(props: ComposerProps): JSX.Element {
         </div>
       ) : null}
       {/* /AGENT-REPLY-SECTION */}
+
+      {/* PRESENCE-SECTION — peer typing strip. Renders only when at
+          least one OTHER tab is currently typing. */}
+      {typingPeers.length > 0 ? (
+        <div
+          className={styles.typingStrip}
+          data-testid="composer-typing-strip"
+          aria-live="polite"
+        >
+          {typingPeers.length === 1
+            ? t('presence.typing.one', {
+                name: typingPeers[0]?.displayName ?? 'user',
+              })
+            : t('presence.typing.many', { n: typingPeers.length })}
+        </div>
+      ) : null}
+      {/* PRESENCE-SECTION-END */}
 
       <div className={styles.inputWrap}>
         {acOpen ? (

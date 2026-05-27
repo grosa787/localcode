@@ -52,6 +52,28 @@ export interface SocketContext {
   subscribedSessions: Set<string>;
   /** Unsubscribe callbacks keyed by sessionId. */
   unsubscribeFns: Map<string, () => void>;
+  // PRESENCE-SECTION
+  /**
+   * Stable per-tab user identity announced by the client on its FIRST
+   * `presence` frame. Captured so the disconnect path can broadcast a
+   * `typing: false` "left" event for the right user even after the
+   * socket closes. Null until the first presence frame arrives.
+   */
+  presenceUserId: string | null;
+  /**
+   * Last-seen displayName from the client. Cached so the disconnect
+   * "left" frame carries a stable label without requiring the client
+   * to re-send it.
+   */
+  presenceDisplayName: string | null;
+  /**
+   * Sessions for which THIS socket has announced presence. The set is
+   * separate from `subscribedSessions` because a tab can be subscribed
+   * without ever typing (read-only viewer); we only broadcast leaves
+   * for sessions the user actually showed up in.
+   */
+  presenceSessions: Set<string>;
+  // PRESENCE-SECTION-END
 }
 
 /**
@@ -101,10 +123,65 @@ export function createSocketContext(): SocketContext {
     clientId: null,
     subscribedSessions: new Set(),
     unsubscribeFns: new Map(),
+    // PRESENCE-SECTION
+    presenceUserId: null,
+    presenceDisplayName: null,
+    presenceSessions: new Set(),
+    // PRESENCE-SECTION-END
   };
 }
 
 export function createWsHandlers(deps: WsDeps): WsHandlers {
+  // PRESENCE-SECTION
+  // Per-session set of sockets that have announced presence. Used to
+  // fan out `presence` frames to every OTHER tab in the same session
+  // (the sender's own echo is skipped — clients ignore their own
+  // userId anyway, but skipping the network round-trip is cleaner).
+  //
+  // Closure-local rather than on `WsDeps` so it's scoped to a single
+  // `createWsHandlers` call; tests get a fresh registry per construction.
+  const presenceSockets = new Map<
+    string,
+    Set<ServerWebSocket<SocketContext>>
+  >();
+
+  const presenceJoin = (
+    ws: ServerWebSocket<SocketContext>,
+    sessionId: string,
+  ): void => {
+    let set = presenceSockets.get(sessionId);
+    if (set === undefined) {
+      set = new Set();
+      presenceSockets.set(sessionId, set);
+    }
+    set.add(ws);
+    ws.data.presenceSessions.add(sessionId);
+  };
+
+  const presenceLeave = (
+    ws: ServerWebSocket<SocketContext>,
+    sessionId: string,
+  ): void => {
+    const set = presenceSockets.get(sessionId);
+    if (set === undefined) return;
+    set.delete(ws);
+    if (set.size === 0) presenceSockets.delete(sessionId);
+  };
+
+  const fanoutPresence = (
+    sessionId: string,
+    sender: ServerWebSocket<SocketContext> | null,
+    frame: WSServerMessage,
+  ): void => {
+    const set = presenceSockets.get(sessionId);
+    if (set === undefined) return;
+    for (const peer of set) {
+      if (peer === sender) continue;
+      sendJson(peer, frame);
+    }
+  };
+  // PRESENCE-SECTION-END
+
   return {
     upgrade(req, server) {
       const ok = server.upgrade(req, { data: createSocketContext() });
@@ -344,11 +421,73 @@ export function createWsHandlers(deps: WsDeps): WsHandlers {
           sendJson(ws, { type: 'pong' });
           return;
         }
+        // PRESENCE-SECTION
+        case 'presence': {
+          // Multi-user collaboration heartbeat. The server stamps its own
+          // clock so peers cannot lie about freshness, updates the
+          // per-runtime peer set, and fans out the canonical frame to
+          // every OTHER subscriber in the session. The sender's own
+          // socket is excluded — clients also filter out their own
+          // userId on receive (defense-in-depth).
+          const runtime = deps.runtimePool.get(msg.sessionId);
+          ctx.presenceUserId = msg.userId;
+          ctx.presenceDisplayName = msg.displayName;
+          presenceJoin(ws, msg.sessionId);
+          let stamped: { lastSeenMs: number };
+          if (runtime !== undefined) {
+            stamped = runtime.applyPresence({
+              userId: msg.userId,
+              displayName: msg.displayName,
+              typing: msg.typing,
+            });
+          } else {
+            // No runtime yet (session never had a message) — still fan
+            // out so passive viewers see typing. Use the server clock.
+            stamped = { lastSeenMs: Date.now() };
+          }
+          const frame: WSServerMessage = {
+            type: 'presence',
+            sessionId: msg.sessionId,
+            userId: msg.userId,
+            displayName: msg.displayName,
+            typing: msg.typing,
+            lastSeenMs: stamped.lastSeenMs,
+          };
+          fanoutPresence(msg.sessionId, ws, frame);
+          return;
+        }
+        // PRESENCE-SECTION-END
       }
     },
 
     onClose(ws) {
       const ctx = ws.data;
+      // PRESENCE-SECTION
+      // Broadcast "left" presence frames BEFORE tearing down the bus
+      // subscriptions so peers see the typing-cleared transition.
+      const userId = ctx.presenceUserId;
+      const displayName = ctx.presenceDisplayName ?? 'user';
+      if (userId !== null) {
+        for (const sessionId of ctx.presenceSessions) {
+          const runtime = deps.runtimePool.get(sessionId);
+          const offline =
+            runtime !== undefined ? runtime.markPresenceOffline(userId) : null;
+          const lastSeenMs = offline?.lastSeenMs ?? Date.now();
+          fanoutPresence(sessionId, ws, {
+            type: 'presence',
+            sessionId,
+            userId,
+            displayName: offline?.displayName ?? displayName,
+            typing: false,
+            lastSeenMs,
+          });
+          presenceLeave(ws, sessionId);
+        }
+      }
+      ctx.presenceSessions.clear();
+      ctx.presenceUserId = null;
+      ctx.presenceDisplayName = null;
+      // PRESENCE-SECTION-END
       for (const unsub of ctx.unsubscribeFns.values()) {
         try {
           unsub();

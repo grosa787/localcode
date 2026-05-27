@@ -56,6 +56,10 @@ import { Box, Text, useInput } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { dimSeparator, noxPalette, textMuted, theme } from '../theme.js';
 import type { GenerationConfig } from '../../types/global.js';
+// I18N-STRINGS-START
+import { useT } from '../../i18n/index.js';
+import type { StringKey } from '../../i18n/strings/en.js';
+// I18N-STRINGS-END
 
 // ---------- Public API ---------------------------------------------------
 
@@ -98,9 +102,15 @@ export interface SettingsOverlayProps {
 
 type FieldKey = keyof GenerationConfig;
 
+// I18N-STRINGS-START
+// `label` is kept as the canonical English string so existing tests that
+// assert error text against the English locale still pass. `labelKey`
+// drives the localised render so users see Russian / English copy based
+// on the active locale.
 interface FieldSpec {
   readonly key: FieldKey;
   readonly label: string;
+  readonly labelKey: StringKey;
   readonly min: number;
   readonly max: number;
   readonly step: number;
@@ -109,18 +119,44 @@ interface FieldSpec {
 }
 
 const FIELDS: readonly FieldSpec[] = [
-  { key: 'temperature', label: 'Temperature', min: 0, max: 2, step: 0.05, decimals: 2 },
-  { key: 'topP', label: 'Top-p', min: 0, max: 1, step: 0.05, decimals: 2 },
   {
-    key: 'repeatPenalty',
-    label: 'Repeat penalty',
+    key: 'temperature',
+    label: 'Temperature',
+    labelKey: 'settings.field.tempLabel',
     min: 0,
     max: 2,
     step: 0.05,
     decimals: 2,
   },
-  { key: 'maxTokens', label: 'Max tokens', min: 1, max: 1_048_576, step: 256, decimals: 0 },
+  {
+    key: 'topP',
+    label: 'Top-p',
+    labelKey: 'settings.field.topPLabel',
+    min: 0,
+    max: 1,
+    step: 0.05,
+    decimals: 2,
+  },
+  {
+    key: 'repeatPenalty',
+    label: 'Repeat penalty',
+    labelKey: 'settings.field.repeatPenaltyLabel',
+    min: 0,
+    max: 2,
+    step: 0.05,
+    decimals: 2,
+  },
+  {
+    key: 'maxTokens',
+    label: 'Max tokens',
+    labelKey: 'settings.field.maxTokensLabel',
+    min: 1,
+    max: 1_048_576,
+    step: 256,
+    decimals: 0,
+  },
 ];
+// I18N-STRINGS-END
 
 // R17 — timeout presets (mirrors CtxSizeOverlay's tables so users see
 // the same labels in both surfaces).
@@ -322,6 +358,9 @@ function SettingsOverlay({
   onApplyProject,
   onClose,
 }: SettingsOverlayProps): React.JSX.Element {
+  // I18N-STRINGS-START
+  const { t } = useT();
+  // I18N-STRINGS-END
   const showTimeouts = globalTimeouts !== undefined;
 
   // Drafts are seeded from props once and mutated locally — saves bounce
@@ -706,10 +745,21 @@ function SettingsOverlay({
     [projectActive],
   );
 
-  const sourceLine = useMemo(
-    () => describeSource(source, projectActive),
-    [source, projectActive],
-  );
+  // I18N-STRINGS-START
+  const sourceLine = useMemo(() => {
+    const overridden = FIELDS.filter((f) => projectActive[f.key]).length;
+    if (source === 'global' || overridden === 0) {
+      return t('settings.source.globalOnly');
+    }
+    if (source === 'project' || overridden === FIELDS.length) {
+      return t('settings.source.projectAll');
+    }
+    return t('settings.source.mixed', {
+      overridden,
+      total: FIELDS.length,
+    });
+  }, [source, projectActive, t]);
+  // I18N-STRINGS-END
 
   const renderGlobalRow = (spec: FieldSpec, index: number): React.JSX.Element => {
     const isFocused = focus === index;
@@ -723,7 +773,9 @@ function SettingsOverlay({
           </Text>
         </Box>
         <Box width={20}>
-          <Text color={isFocused ? noxPalette.white : noxPalette.light}>{spec.label}</Text>
+          {/* I18N-STRINGS-START */}
+          <Text color={isFocused ? noxPalette.white : noxPalette.light}>{t(spec.labelKey)}</Text>
+          {/* I18N-STRINGS-END */}
         </Box>
         <Box>
           <Text>
@@ -733,9 +785,15 @@ function SettingsOverlay({
           </Text>
         </Box>
         <Box marginLeft={2}>
+          {/* I18N-STRINGS-START */}
           <Text color={textMuted}>
-            {`step ${formatValue(spec.step, spec)} · range [${spec.min}..${spec.max}]`}
+            {t('settings.fieldHint.stepRange', {
+              step: formatValue(spec.step, spec),
+              min: spec.min,
+              max: spec.max,
+            })}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
       </Box>
     );
@@ -755,7 +813,9 @@ function SettingsOverlay({
           </Text>
         </Box>
         <Box width={20}>
-          <Text color={isFocused ? noxPalette.white : noxPalette.light}>{spec.label}</Text>
+          {/* I18N-STRINGS-START */}
+          <Text color={isFocused ? noxPalette.white : noxPalette.light}>{t(spec.labelKey)}</Text>
+          {/* I18N-STRINGS-END */}
         </Box>
         <Box>
           {isFocused ? (
@@ -765,9 +825,13 @@ function SettingsOverlay({
           )}
         </Box>
         <Box marginLeft={2}>
+          {/* I18N-STRINGS-START */}
           <Text color={textMuted}>
-            {isActive ? '(space to remove override)' : '(space to enable override)'}
+            {isActive
+              ? t('settings.project.spaceRemove')
+              : t('settings.project.spaceEnable')}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
       </Box>
     );
@@ -884,7 +948,9 @@ function SettingsOverlay({
         <Box marginLeft={1}>
           <Text color={textMuted}>
             {suffix}
-            {cursorActive ? '   (enter to edit)' : ''}
+            {/* I18N-STRINGS-START */}
+            {cursorActive ? t('settings.suffix.editHint') : ''}
+            {/* I18N-STRINGS-END */}
           </Text>
         </Box>
       </Box>
@@ -900,9 +966,11 @@ function SettingsOverlay({
       paddingY={1}
     >
       <Box>
+        {/* I18N-STRINGS-START */}
         <Text color={noxPalette.white} bold>
-          Generation Settings
+          {t('settings.title')}
         </Text>
+        {/* I18N-STRINGS-END */}
       </Box>
 
       <Box marginTop={1}>
@@ -918,15 +986,21 @@ function SettingsOverlay({
         marginTop={1}
       >
         <Box>
+          {/* I18N-STRINGS-START */}
           <Text color={noxPalette.light} bold>
-            Global
+            {t('settings.panel.global')}
           </Text>
-          <Text color={textMuted}>{'  (~/.localcode/config.toml)'}</Text>
+          <Text color={textMuted}>{t('settings.panel.global.path')}</Text>
+          {/* I18N-STRINGS-END */}
         </Box>
         <Box flexDirection="column" marginTop={1}>
           {FIELDS.map((spec, i) => renderGlobalRow(spec, i + FOCUS_GLOBAL_FIELD_START))}
         </Box>
-        <Box marginTop={1}>{renderButton('Save Global', FOCUS_SAVE_GLOBAL, 'primary')}</Box>
+        <Box marginTop={1}>
+          {/* I18N-STRINGS-START */}
+          {renderButton(t('settings.button.saveGlobal'), FOCUS_SAVE_GLOBAL, 'primary')}
+          {/* I18N-STRINGS-END */}
+        </Box>
       </Box>
 
       {/* ----- Project panel ----- */}
@@ -938,19 +1012,26 @@ function SettingsOverlay({
         marginTop={1}
       >
         <Box>
+          {/* I18N-STRINGS-START */}
           <Text color={noxPalette.light} bold>
-            Project
+            {t('settings.panel.project')}
           </Text>
           <Text color={textMuted}>
-            {`  (<projectRoot>/.localcode/settings.json) — ${overriddenCount}/${FIELDS.length} active`}
+            {t('settings.panel.project.suffix', {
+              n: overriddenCount,
+              total: FIELDS.length,
+            })}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
         <Box flexDirection="column" marginTop={1}>
           {FIELDS.map((spec, i) => renderProjectRow(spec, i))}
         </Box>
         <Box flexDirection="row" marginTop={1}>
-          {renderButton('Save Project', FOCUS_SAVE_PROJECT, 'primary')}
-          <Box marginLeft={2}>{renderButton('Reset Project', FOCUS_RESET_PROJECT, 'danger')}</Box>
+          {/* I18N-STRINGS-START */}
+          {renderButton(t('settings.button.saveProject'), FOCUS_SAVE_PROJECT, 'primary')}
+          <Box marginLeft={2}>{renderButton(t('settings.button.resetProject'), FOCUS_RESET_PROJECT, 'danger')}</Box>
+          {/* I18N-STRINGS-END */}
         </Box>
       </Box>
 
@@ -964,12 +1045,12 @@ function SettingsOverlay({
           marginTop={1}
         >
           <Box>
+            {/* I18N-STRINGS-START */}
             <Text color={noxPalette.light} bold>
-              Timeouts (global)
+              {t('settings.panel.timeouts')}
             </Text>
-            <Text color={textMuted}>
-              {'  (~/.localcode/config.toml [context])'}
-            </Text>
+            <Text color={textMuted}>{t('settings.panel.timeouts.path')}</Text>
+            {/* I18N-STRINGS-END */}
           </Box>
 
           {/* Response wait — presets */}
@@ -982,13 +1063,15 @@ function SettingsOverlay({
               </Text>
             </Box>
             <Box width={20}>
+              {/* I18N-STRINGS-START */}
               <Text
                 color={
                   focus === FOCUS_RESPONSE_PRESETS ? noxPalette.white : noxPalette.light
                 }
               >
-                Response wait
+                {t('settings.row.responseWait')}
               </Text>
+              {/* I18N-STRINGS-END */}
             </Box>
             {renderPresetChips(
               RESPONSE_LABELS,
@@ -1009,21 +1092,25 @@ function SettingsOverlay({
               </Text>
             </Box>
             <Box width={20}>
+              {/* I18N-STRINGS-START */}
               <Text
                 color={
                   focus === FOCUS_RESPONSE_CUSTOM ? noxPalette.white : noxPalette.light
                 }
               >
-                Custom
+                {t('settings.row.custom')}
               </Text>
+              {/* I18N-STRINGS-END */}
             </Box>
+            {/* I18N-STRINGS-START */}
             {renderCustomTimeout(
               'response',
               focus === FOCUS_RESPONSE_CUSTOM,
               responseDraft,
-              `seconds (${RESPONSE_MIN}..${RESPONSE_MAX})`,
+              t('settings.suffix.secondsRange', { min: RESPONSE_MIN, max: RESPONSE_MAX }),
               '300',
             )}
+            {/* I18N-STRINGS-END */}
           </Box>
 
           {/* Keep-alive — presets */}
@@ -1034,11 +1121,13 @@ function SettingsOverlay({
               </Text>
             </Box>
             <Box width={20}>
+              {/* I18N-STRINGS-START */}
               <Text
                 color={focus === FOCUS_KEEP_PRESETS ? noxPalette.white : noxPalette.light}
               >
-                Keep-alive
+                {t('settings.row.keepAlive')}
               </Text>
+              {/* I18N-STRINGS-END */}
             </Box>
             {renderPresetChips(
               KEEP_LABELS,
@@ -1057,37 +1146,45 @@ function SettingsOverlay({
               </Text>
             </Box>
             <Box width={20}>
+              {/* I18N-STRINGS-START */}
               <Text
                 color={focus === FOCUS_KEEP_CUSTOM ? noxPalette.white : noxPalette.light}
               >
-                Custom
+                {t('settings.row.custom')}
               </Text>
+              {/* I18N-STRINGS-END */}
             </Box>
+            {/* I18N-STRINGS-START */}
             {renderCustomTimeout(
               'keepAlive',
               focus === FOCUS_KEEP_CUSTOM,
               keepAliveDraft,
-              `seconds (${KEEP_MIN}..${KEEP_MAX})`,
+              t('settings.suffix.secondsRange', { min: KEEP_MIN, max: KEEP_MAX }),
               '1800',
             )}
+            {/* I18N-STRINGS-END */}
           </Box>
 
           <Box marginTop={1}>
-            {renderButton('Save Timeouts', FOCUS_SAVE_TIMEOUTS, 'primary')}
+            {/* I18N-STRINGS-START */}
+            {renderButton(t('settings.button.saveTimeouts'), FOCUS_SAVE_TIMEOUTS, 'primary')}
+            {/* I18N-STRINGS-END */}
           </Box>
         </Box>
       )}
 
       {error !== null && (
         <Box marginTop={1}>
-          <Text color="#fca5a5">Error: {error}</Text>
+          {/* I18N-STRINGS-START */}
+          <Text color="#fca5a5">{t('settings.error', { msg: error })}</Text>
+          {/* I18N-STRINGS-END */}
         </Box>
       )}
 
       <Box marginTop={1}>
-        <Text color={textMuted}>
-          ↑/↓ navigate · ←/→ adjust · (space) toggle override · (enter) save section · (esc) close
-        </Text>
+        {/* I18N-STRINGS-START */}
+        <Text color={textMuted}>{t('settings.footer')}</Text>
+        {/* I18N-STRINGS-END */}
       </Box>
     </Box>
   );

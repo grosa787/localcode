@@ -58,6 +58,13 @@ export interface MessageBlockProps {
    * existed.
    */
   readonly model?: string;
+  // COST-FOOTER-PROPS-SECTION (start)
+  // Cumulative spend annotations forwarded straight through to the
+  // underlying `UsageFooter`. Optional — when undefined / zero, the
+  // footer omits the segments.
+  readonly sessionCostUsd?: number;
+  readonly todayCostUsd?: number;
+  // COST-FOOTER-PROPS-SECTION (end)
 }
 
 /**
@@ -436,6 +443,10 @@ function MessageBlockImpl(props: MessageBlockProps): React.JSX.Element {
             tokensOutput={props.tokensOutput}
             durationMs={props.durationMs}
             sessionTotalOut={props.sessionTotalOut}
+            // COST-FOOTER-PROPS-SECTION — forward through to footer.
+            sessionCostUsd={props.sessionCostUsd}
+            todayCostUsd={props.todayCostUsd}
+            // COST-FOOTER-PROPS-SECTION-END
           />
         </Box>
       )}

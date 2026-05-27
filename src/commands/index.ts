@@ -217,6 +217,31 @@ export { createUpdateCommand } from '@/commands/cmd-update';
 export type { UpdateCommandDeps, UpdaterFacade } from '@/commands/cmd-update';
 // UPDATE-CMD-SECTION-END
 
+// METRICS-CMD-SECTION — `/metrics` opens the opt-in local-only metrics
+// dashboard (tool success rate, cache-hit %, avg turn duration, cost
+// per model, top expensive sessions). Off by default; flip
+// `[telemetry] enabled = true` in `~/.localcode/config.toml` to switch
+// on the aggregator. `/metrics export` writes a JSON snapshot to
+// `~/.localcode/metrics-<date>.json` for power users. Data NEVER leaves
+// the user's machine.
+export { createMetricsCommand } from '@/commands/cmd-metrics';
+export type { MetricsCommandDeps } from '@/commands/cmd-metrics';
+// METRICS-CMD-SECTION-END
+
+// MARKETPLACE-CMD-SECTION — `/skills browse` + `/mcp browse` fetch +
+// install entries from public upstream catalogs (Anthropic skills,
+// modelcontextprotocol/servers). Both commands hand off to the shared
+// `MarketplaceOverlay` UI when the host injects an opener.
+export {
+  createSkillsBrowseCommand,
+  createMcpBrowseCommand,
+} from '@/commands/cmd-marketplace';
+export type {
+  SkillsBrowseDeps,
+  McpBrowseDeps,
+} from '@/commands/cmd-marketplace';
+// MARKETPLACE-CMD-SECTION-END
+
 export type {
   AgentDeps,
   AgentLLM,
@@ -452,6 +477,31 @@ export interface BuiltinCommandFactories {
    */
   update?: SlashCommand;
   // UPDATE-CMD-SECTION-END
+  // METRICS-CMD-SECTION
+  /**
+   * `/metrics` — opt-in local-only metrics dashboard. Aggregator pulls
+   * from `messages` table + crash journals. Subcommand `export` writes
+   * `~/.localcode/metrics-<date>.json`. Optional — wiring is only
+   * required when the host wants the slash command available; the
+   * aggregator itself respects `config.telemetry.enabled` regardless.
+   */
+  metrics?: SlashCommand;
+  // METRICS-CMD-SECTION-END
+  // MARKETPLACE-CMD-SECTION
+  /**
+   * `/skills browse` — fetch the Anthropic skills catalog and open the
+   * marketplace overlay so the user can install entries with one
+   * keypress. Optional — wired only when the host provides a
+   * `MarketplaceOverlay` mount point.
+   */
+  skillsBrowse?: SlashCommand;
+  /**
+   * `/mcp browse` — fetch the modelcontextprotocol/servers catalog and
+   * open the marketplace overlay for one-keypress install into
+   * `~/.localcode/config.toml`. Optional.
+   */
+  mcpBrowse?: SlashCommand;
+  // MARKETPLACE-CMD-SECTION-END
 }
 
 /**
@@ -543,6 +593,13 @@ export function registerBuiltinCommands(
     // UPDATE-CMD-SECTION
     factories.update,
     // UPDATE-CMD-SECTION-END
+    // METRICS-CMD-SECTION
+    factories.metrics,
+    // METRICS-CMD-SECTION-END
+    // MARKETPLACE-CMD-SECTION
+    factories.skillsBrowse,
+    factories.mcpBrowse,
+    // MARKETPLACE-CMD-SECTION-END
   ];
   for (const cmd of ordered) {
     if (cmd) registry.register(cmd);

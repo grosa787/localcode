@@ -90,6 +90,17 @@ export interface UsageFooterProps {
   // `ContextManager.getBreakdown()` in the host.
   readonly budgetBreakdown?: ContextBudgetBreakdown;
   // BUDGET-BAR-SECTION (end)
+  // COST-FOOTER-SECTION (start) — cumulative spend across the active
+  // session and across every session since local midnight today. Both
+  // are USD; the host (`ChatScreen` / `app.tsx`) computes them via
+  // `SessionManager.getSessionCost(sid)` + `getTodayCost()` and passes
+  // them through whenever the user is on a paid backend. Omitting both
+  // keeps the footer body unchanged so legacy call sites are unaffected.
+  /** Sum of cost_usd across the active session, in USD. */
+  readonly sessionCostUsd?: number;
+  /** Sum of cost_usd across every session since local midnight today, in USD. */
+  readonly todayCostUsd?: number;
+  // COST-FOOTER-SECTION (end)
 }
 
 function formatDuration(ms: number): string {
@@ -178,6 +189,33 @@ function buildSegments(props: UsageFooterProps): string[] {
   ) {
     out.push(formatCost(props.cost));
   }
+
+  // COST-FOOTER-SECTION (start) — cumulative session + today totals.
+  // Both segments are appended only when their value is a positive
+  // finite number so local-only or first-turn sessions never render
+  // `$0.00` noise. Format mirrors the per-turn cost glyph for visual
+  // continuity.
+  const sessionCost = props.sessionCostUsd;
+  const todayCost = props.todayCostUsd;
+  const cumulativeParts: string[] = [];
+  if (
+    sessionCost !== undefined &&
+    Number.isFinite(sessionCost) &&
+    sessionCost > 0
+  ) {
+    cumulativeParts.push(`session: ${formatCost(sessionCost)}`);
+  }
+  if (
+    todayCost !== undefined &&
+    Number.isFinite(todayCost) &&
+    todayCost > 0
+  ) {
+    cumulativeParts.push(`today: ${formatCost(todayCost)}`);
+  }
+  if (cumulativeParts.length > 0) {
+    out.push(cumulativeParts.join(' · '));
+  }
+  // COST-FOOTER-SECTION (end)
 
   return out;
 }

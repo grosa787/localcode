@@ -43,6 +43,10 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { dimSeparator, noxPalette, textMuted, theme } from '../theme.js';
+// I18N-STRINGS-START
+import { useT } from '../../i18n/index.js';
+import type { StringKey } from '../../i18n/strings/en.js';
+// I18N-STRINGS-END
 
 export interface CtxSizeOverlayProps {
   readonly currentMaxTokens: number;
@@ -153,35 +157,48 @@ function digitsOnly(raw: string): string {
   return out;
 }
 
+// I18N-STRINGS-START
+type Translator = (
+  key: StringKey,
+  vars?: Readonly<Record<string, string | number>>,
+) => string;
+
 /**
  * Parse a custom-field string against its [min..max] range. Empty
  * strings are rejected so the user can't accidentally Apply "0" by
  * tabbing through. Returns either a clean integer or a localized error
- * string suitable for inline display.
+ * string suitable for inline display. The localised `label` is supplied
+ * by the caller so the error message follows the active locale.
  */
 function parseCustom(
   raw: string,
   min: number,
   max: number,
   label: string,
+  t: Translator,
 ): { ok: true; value: number } | { ok: false; error: string } {
   const trimmed = raw.trim();
   if (trimmed.length === 0) {
-    return { ok: false, error: `${label} required` };
+    return { ok: false, error: t('settings.validate.required', { label }) };
   }
   // digitsOnly() guarantees [0-9]+, but parseInt still has to confirm.
   const n = Number.parseInt(trimmed, 10);
   if (!Number.isFinite(n) || !Number.isInteger(n)) {
-    return { ok: false, error: `${label} must be an integer` };
+    return { ok: false, error: t('settings.validate.notInteger', { label }) };
   }
   if (n < min || n > max) {
     return {
       ok: false,
-      error: `${label} out of range [${min}..${max.toLocaleString('en-US')}]`,
+      error: t('settings.validate.outOfRange', {
+        label,
+        min,
+        max: max.toLocaleString('en-US'),
+      }),
     };
   }
   return { ok: true, value: n };
 }
+// I18N-STRINGS-END
 
 /**
  * Format keep-alive seconds in the human-friendly form used in the
@@ -237,6 +254,9 @@ function CtxSizeOverlay({
   onApply,
   onClose,
 }: CtxSizeOverlayProps): React.JSX.Element {
+  // I18N-STRINGS-START
+  const { t } = useT();
+  // I18N-STRINGS-END
   // Resolve the optional prop once; downstream code can treat it as a
   // plain number from here on out.
   const initialTimeout =
@@ -334,13 +354,15 @@ function CtxSizeOverlay({
           : field === 'keepAlive'
             ? KEEP_MAX
             : TIMEOUT_MAX;
+      // I18N-STRINGS-START
       const label =
         field === 'maxTokens'
-          ? 'Window'
+          ? t('ctxsize.row.window').replace(/:\s*$/, '')
           : field === 'keepAlive'
-            ? 'Keep-alive'
-            : 'Response timeout';
-      const result = parseCustom(raw, min, max, label);
+            ? t('ctxsize.row.keepAlive').replace(/:\s*$/, '')
+            : t('ctxsize.row.responseTimeout').replace(/:\s*$/, '');
+      const result = parseCustom(raw, min, max, label, t);
+      // I18N-STRINGS-END
       if (!result.ok) {
         setError(result.error);
         // Stay in edit mode so the user can fix without retyping.
@@ -365,7 +387,9 @@ function CtxSizeOverlay({
       setEditBuffer('');
       setError(null);
     },
-    [editingField],
+    // I18N-STRINGS-START
+    [editingField, t],
+    // I18N-STRINGS-END
   );
 
   // Live filter — strip non-digits as they're typed so paste of "80,000"
@@ -542,8 +566,14 @@ function CtxSizeOverlay({
     const ctxLabel = formatTokens(draftMaxTokens);
     const keepLabel = formatKeepAlive(draftKeepAlive);
     const tmoLabel = formatTimeout(draftResponseTimeout);
-    return `Draft: ${ctxLabel} window · ${keepLabel} keep-alive · ${tmoLabel} timeout`;
-  }, [draftMaxTokens, draftKeepAlive, draftResponseTimeout]);
+    // I18N-STRINGS-START
+    return t('ctxsize.draft', {
+      ctx: ctxLabel,
+      keep: keepLabel,
+      tmo: tmoLabel,
+    });
+    // I18N-STRINGS-END
+  }, [draftMaxTokens, draftKeepAlive, draftResponseTimeout, t]);
 
   const renderPresetRow = (
     labels: readonly string[],
@@ -641,7 +671,9 @@ function CtxSizeOverlay({
         <Box marginLeft={1}>
           <Text color={textMuted}>
             {suffix}
-            {active ? '   (enter to edit)' : ''}
+            {/* I18N-STRINGS-START */}
+            {active ? t('ctxsize.suffix.editHint') : ''}
+            {/* I18N-STRINGS-END */}
           </Text>
         </Box>
       </Box>
@@ -649,7 +681,9 @@ function CtxSizeOverlay({
   };
 
   const renderActions = (): React.JSX.Element => {
-    const labels = ['Apply', 'Cancel'];
+    // I18N-STRINGS-START
+    const labels = [t('ctxsize.action.apply'), t('ctxsize.action.cancel')];
+    // I18N-STRINGS-END
     return (
       <Box flexDirection="row">
         {labels.map((label, i) => {
@@ -694,18 +728,23 @@ function CtxSizeOverlay({
       paddingY={1}
     >
       <Box>
+        {/* I18N-STRINGS-START */}
         <Text color={noxPalette.white} bold>
-          Context Size
+          {t('ctxsize.title')}
         </Text>
+        {/* I18N-STRINGS-END */}
         <Text color={textMuted}>{`   ${summaryLine}`}</Text>
       </Box>
 
       {/* ----- Window presets ----- */}
       <Box flexDirection="row" marginTop={1}>
         <Box width={LABEL_COL}>
+          {/* I18N-STRINGS-START */}
           <Text color={row === 'ctx-presets' ? noxPalette.light : textMuted}>
-            {row === 'ctx-presets' ? '❯ ' : '  '}Window:
+            {row === 'ctx-presets' ? '❯ ' : '  '}
+            {t('ctxsize.row.window')}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
         {renderPresetRow(CTX_LABELS, CTX_PRESETS, ctxIndex, row === 'ctx-presets', draftMaxTokens)}
       </Box>
@@ -713,19 +752,27 @@ function CtxSizeOverlay({
       {/* ----- Window custom ----- */}
       <Box flexDirection="row" marginTop={1}>
         <Box width={LABEL_COL}>
+          {/* I18N-STRINGS-START */}
           <Text color={row === 'ctx-custom' ? noxPalette.light : textMuted}>
-            {row === 'ctx-custom' ? '❯ ' : '  '}Custom:
+            {row === 'ctx-custom' ? '❯ ' : '  '}
+            {t('ctxsize.row.custom')}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
-        {renderCustomRow('maxTokens', row === 'ctx-custom', draftMaxTokens, 'tokens')}
+        {/* I18N-STRINGS-START */}
+        {renderCustomRow('maxTokens', row === 'ctx-custom', draftMaxTokens, t('ctxsize.suffix.tokens'))}
+        {/* I18N-STRINGS-END */}
       </Box>
 
       {/* ----- Keep-alive presets ----- */}
       <Box flexDirection="row" marginTop={1}>
         <Box width={LABEL_COL}>
+          {/* I18N-STRINGS-START */}
           <Text color={row === 'keep-presets' ? noxPalette.light : textMuted}>
-            {row === 'keep-presets' ? '❯ ' : '  '}Keep-alive:
+            {row === 'keep-presets' ? '❯ ' : '  '}
+            {t('ctxsize.row.keepAlive')}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
         {renderPresetRow(KEEP_LABELS, KEEP_PRESETS, keepIndex, row === 'keep-presets', draftKeepAlive)}
       </Box>
@@ -733,19 +780,27 @@ function CtxSizeOverlay({
       {/* ----- Keep-alive custom ----- */}
       <Box flexDirection="row" marginTop={1}>
         <Box width={LABEL_COL}>
+          {/* I18N-STRINGS-START */}
           <Text color={row === 'keep-custom' ? noxPalette.light : textMuted}>
-            {row === 'keep-custom' ? '❯ ' : '  '}Custom:
+            {row === 'keep-custom' ? '❯ ' : '  '}
+            {t('ctxsize.row.custom')}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
-        {renderCustomRow('keepAlive', row === 'keep-custom', draftKeepAlive, 'seconds')}
+        {/* I18N-STRINGS-START */}
+        {renderCustomRow('keepAlive', row === 'keep-custom', draftKeepAlive, t('ctxsize.suffix.seconds'))}
+        {/* I18N-STRINGS-END */}
       </Box>
 
       {/* ----- Response-timeout presets ----- */}
       <Box flexDirection="row" marginTop={1}>
         <Box width={LABEL_COL}>
+          {/* I18N-STRINGS-START */}
           <Text color={row === 'timeout-presets' ? noxPalette.light : textMuted}>
-            {row === 'timeout-presets' ? '❯ ' : '  '}Response timeout:
+            {row === 'timeout-presets' ? '❯ ' : '  '}
+            {t('ctxsize.row.responseTimeout')}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
         {renderPresetRow(
           TIMEOUT_LABELS,
@@ -759,16 +814,21 @@ function CtxSizeOverlay({
       {/* ----- Response-timeout custom ----- */}
       <Box flexDirection="row" marginTop={1}>
         <Box width={LABEL_COL}>
+          {/* I18N-STRINGS-START */}
           <Text color={row === 'timeout-custom' ? noxPalette.light : textMuted}>
-            {row === 'timeout-custom' ? '❯ ' : '  '}Custom:
+            {row === 'timeout-custom' ? '❯ ' : '  '}
+            {t('ctxsize.row.custom')}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
+        {/* I18N-STRINGS-START */}
         {renderCustomRow(
           'responseTimeout',
           row === 'timeout-custom',
           draftResponseTimeout,
-          'seconds (30..7200)',
+          t('ctxsize.suffix.secondsRange'),
         )}
+        {/* I18N-STRINGS-END */}
       </Box>
 
       {/* ----- Actions ----- */}
@@ -783,20 +843,24 @@ function CtxSizeOverlay({
 
       {error !== null && (
         <Box marginTop={1}>
-          <Text color="#fca5a5">Error: {error}</Text>
+          {/* I18N-STRINGS-START */}
+          <Text color="#fca5a5">{t('ctxsize.error', { msg: error })}</Text>
+          {/* I18N-STRINGS-END */}
         </Box>
       )}
 
       <Box marginTop={1}>
-        <Text color={textMuted}>
-          ↑/↓ rows · ←/→ cycle preset · (enter) confirm/edit · (esc) cancel
-        </Text>
+        {/* I18N-STRINGS-START */}
+        <Text color={textMuted}>{t('ctxsize.footer')}</Text>
+        {/* I18N-STRINGS-END */}
       </Box>
 
       <Box>
+        {/* I18N-STRINGS-START */}
         <Text color={textMuted} italic>
-          Note: Ollama models reload with the new num_ctx. LM Studio&apos;s context is set at model load — change it in LM Studio first, then match it here. Response timeout aborts the request if the model produces no content for that many seconds (heartbeats and thinking blocks don&apos;t count). Increase if your model writes long code slowly.
+          {t('ctxsize.note')}
         </Text>
+        {/* I18N-STRINGS-END */}
       </Box>
     </Box>
   );

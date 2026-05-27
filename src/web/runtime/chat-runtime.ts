@@ -196,6 +196,27 @@ export interface ChatRuntimeDeps {
  */
 const MAX_TURNS = 20;
 
+// PRESENCE-SECTION
+/**
+ * Per-peer tracked state for a multi-user session. `lastSeenMs` is
+ * stamped by the server clock (NOT the client's wall time) so peers
+ * cannot lie about freshness. The reaper drops entries older than
+ * {@link PRESENCE_REAP_AFTER_MS} from the in-memory set.
+ */
+export interface PresencePeerInfo {
+  userId: string;
+  displayName: string;
+  typing: boolean;
+  lastSeenMs: number;
+}
+
+/** Drop peers from the tracked set after this much silence. */
+export const PRESENCE_REAP_AFTER_MS = 60_000;
+
+/** How often the reaper sweeps. */
+const PRESENCE_REAP_INTERVAL_MS = 15_000;
+// PRESENCE-SECTION-END
+
 export class ChatRuntime {
   private readonly deps: ChatRuntimeDeps;
   private isStreaming = false;
@@ -218,12 +239,122 @@ export class ChatRuntime {
   private lastChunkAt = 0;
   // RECOVERY-FIX-3-SECTION-END
 
+  // PRESENCE-SECTION
+  /**
+   * Active peers in this session, keyed by `userId`. Updated when a
+   * `presence` frame arrives via {@link applyPresence} and pruned by
+   * {@link reapStalePresence}. The set is broadcast-fan-out is owned by
+   * the WS layer (`src/web/server/ws.ts`) — the runtime is just the
+   * canonical store + reaper.
+   */
+  private readonly peers = new Map<string, PresencePeerInfo>();
+  private presenceReapTimer: ReturnType<typeof setInterval> | null = null;
+  // PRESENCE-SECTION-END
+
   constructor(deps: ChatRuntimeDeps) {
     this.deps = deps;
     this.wireToolExecutor();
     this.wireAgentOrchestrator();
     this.wireBreakerRegistry();
+    // PRESENCE-SECTION
+    this.startPresenceReaper();
+    // PRESENCE-SECTION-END
   }
+
+  // PRESENCE-SECTION
+  /**
+   * Idempotently update the peer entry for `info.userId`. Returns the
+   * canonical info AFTER the server stamped `lastSeenMs` so the WS layer
+   * can fan out an authoritative copy (clients cannot lie about freshness).
+   */
+  applyPresence(info: {
+    userId: string;
+    displayName: string;
+    typing: boolean;
+  }): PresencePeerInfo {
+    const stamped: PresencePeerInfo = {
+      userId: info.userId,
+      displayName: info.displayName,
+      typing: info.typing,
+      lastSeenMs: Date.now(),
+    };
+    this.peers.set(info.userId, stamped);
+    return stamped;
+  }
+
+  /**
+   * Mark a peer as offline (typing=false, lastSeenMs=now) on disconnect.
+   * Returns the info so the caller can broadcast it. Returns `null` when
+   * the peer was unknown (still safe to call from the WS onClose path).
+   */
+  markPresenceOffline(userId: string): PresencePeerInfo | null {
+    const existing = this.peers.get(userId);
+    if (existing === undefined) return null;
+    const offline: PresencePeerInfo = {
+      userId,
+      displayName: existing.displayName,
+      typing: false,
+      lastSeenMs: Date.now(),
+    };
+    // Remove the peer immediately on disconnect so subscriberCount-like
+    // queries see them as gone. The fan-out frame still flows so other
+    // clients can show the "left" state in their UI.
+    this.peers.delete(userId);
+    return offline;
+  }
+
+  /** Snapshot of currently-tracked peers — defensive copy for tests/UI. */
+  listPresence(): readonly PresencePeerInfo[] {
+    return [...this.peers.values()];
+  }
+
+  /**
+   * Drop peers whose `lastSeenMs` is older than
+   * {@link PRESENCE_REAP_AFTER_MS}. Called by the reaper interval and
+   * also explicitly from tests so the time-based behaviour can be
+   * driven without `sleep`.
+   */
+  reapStalePresence(now: number = Date.now()): PresencePeerInfo[] {
+    const reaped: PresencePeerInfo[] = [];
+    for (const peer of this.peers.values()) {
+      if (now - peer.lastSeenMs > PRESENCE_REAP_AFTER_MS) {
+        this.peers.delete(peer.userId);
+        reaped.push({ ...peer, typing: false, lastSeenMs: now });
+      }
+    }
+    return reaped;
+  }
+
+  private startPresenceReaper(): void {
+    if (this.presenceReapTimer !== null) return;
+    this.presenceReapTimer = setInterval(() => {
+      const reaped = this.reapStalePresence();
+      for (const peer of reaped) {
+        // Best-effort fan-out so passive clients eventually see the
+        // peer go away. The bus broadcasts to every subscriber for the
+        // session; clients filter out their own userId on receive.
+        this.emit({
+          type: 'presence',
+          sessionId: this.deps.sessionId,
+          userId: peer.userId,
+          displayName: peer.displayName,
+          typing: false,
+          lastSeenMs: peer.lastSeenMs,
+        });
+      }
+    }, PRESENCE_REAP_INTERVAL_MS);
+    // Don't keep the Bun process alive just for the reaper.
+    const unref = (this.presenceReapTimer as unknown as { unref?: () => void }).unref;
+    if (typeof unref === 'function') unref.call(this.presenceReapTimer);
+  }
+
+  private stopPresenceReaper(): void {
+    if (this.presenceReapTimer !== null) {
+      clearInterval(this.presenceReapTimer);
+      this.presenceReapTimer = null;
+    }
+  }
+  // PRESENCE-SECTION-END
 
   /**
    * Subscribe to circuit-breaker registry transitions and forward them
@@ -387,6 +518,10 @@ export class ChatRuntime {
       }
       this.breakerUnsubscribe = null;
     }
+    // PRESENCE-SECTION
+    this.stopPresenceReaper();
+    this.peers.clear();
+    // PRESENCE-SECTION-END
   }
 
   /**

@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2024-05-02T09:00:00.000Z","message":{"role":"user","content":"ping"}}
+{"type":"assistant","timestamp":"2024-05-02T09:00:01.000Z","message":{"role":"assistant","content":"pong"}}

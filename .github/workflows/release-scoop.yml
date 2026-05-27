@@ -1,0 +1,229 @@
+name: Release Scoop Manifest
+
+# Publishes / refreshes the Scoop manifest at `bucket/localcode.json` in the
+# external `grosa787/scoop-bucket` repository after a `v*` release lands.
+#
+# Trigger:
+#   - on `v*` tag push (after release.yml has uploaded Windows artifacts)
+#   - manual via workflow_dispatch (re-run against an existing release)
+#
+# Pre-requisites:
+#   1. The release tagged `v<version>` must already exist on GitHub Releases and
+#      must contain at least `localcode-win-x64.zip` plus its `.sha256` sidecar
+#      (uploaded by release.yml's WINDOWS-BUILD-SECTION job).
+#   2. Repository secret `SCOOP_BUCKET_PAT` must be set to a fine-grained PAT
+#      with `Contents: read+write` permission on `grosa787/scoop-bucket`.
+#      If the secret is missing the job exits with a clear error instead of
+#      silently failing.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish to scoop-bucket (e.g. v0.20.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-scoop:
+    name: Publish Scoop manifest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required secret
+        env:
+          SCOOP_BUCKET_PAT: ${{ secrets.SCOOP_BUCKET_PAT }}
+        run: |
+          set -eu
+          if [ -z "${SCOOP_BUCKET_PAT:-}" ]; then
+            echo "::error::Repository secret SCOOP_BUCKET_PAT is not set."
+            echo "Create a fine-grained PAT with Contents: read+write on grosa787/scoop-bucket"
+            echo "and add it as a repository secret named SCOOP_BUCKET_PAT."
+            exit 1
+          fi
+          echo "SCOOP_BUCKET_PAT is configured"
+
+      - name: Checkout source repo (for manifest template)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Resolve tag and version
+        id: meta
+        shell: bash
+        run: |
+          set -eu
+          if [ -n "${{ inputs.tag || '' }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          case "$TAG" in
+            v*) VERSION="${TAG#v}" ;;
+            *)  VERSION="$TAG" ;;
+          esac
+          echo "tag=$TAG"         >>"$GITHUB_OUTPUT"
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG version=$VERSION"
+
+      - name: Download Windows release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -eu
+          TAG="${{ steps.meta.outputs.tag }}"
+          mkdir -p win-assets
+          # x64 is required. arm64 is optional (Bun does not yet ship a
+          # standalone runtime for Windows ARM64 — if release.yml gains an
+          # arm64 job in the future the manifest auto-includes it).
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'localcode-win-x64.zip' \
+            --pattern 'localcode-win-x64.zip.sha256' \
+            --dir win-assets
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'localcode-win-arm64.zip' \
+            --pattern 'localcode-win-arm64.zip.sha256' \
+            --dir win-assets || echo "(no arm64 assets for this release — manifest will omit arm64 block)"
+          ls -la win-assets/
+          if [ ! -f win-assets/localcode-win-x64.zip ]; then
+            echo "::error::localcode-win-x64.zip not found on release $TAG."
+            echo "Make sure release.yml has uploaded the Windows artifact before this workflow runs."
+            exit 1
+          fi
+
+      - name: Verify checksums
+        shell: bash
+        run: |
+          set -eu
+          cd win-assets
+          if [ -f localcode-win-x64.zip.sha256 ]; then
+            sha256sum -c localcode-win-x64.zip.sha256
+          else
+            echo "::warning::No .sha256 sidecar for x64 — computing on the fly."
+          fi
+          if [ -f localcode-win-arm64.zip.sha256 ]; then
+            sha256sum -c localcode-win-arm64.zip.sha256
+          fi
+
+      - name: Compute hashes
+        id: hashes
+        shell: bash
+        run: |
+          set -eu
+          cd win-assets
+          X64="$(sha256sum localcode-win-x64.zip | awk '{print $1}')"
+          echo "x64=$X64" >>"$GITHUB_OUTPUT"
+          echo "x64 sha256: $X64"
+          if [ -f localcode-win-arm64.zip ]; then
+            ARM64="$(sha256sum localcode-win-arm64.zip | awk '{print $1}')"
+            echo "arm64=$ARM64" >>"$GITHUB_OUTPUT"
+            echo "has_arm64=true" >>"$GITHUB_OUTPUT"
+            echo "arm64 sha256: $ARM64"
+          else
+            echo "has_arm64=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Render manifest from template
+        id: render
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          X64_HASH: ${{ steps.hashes.outputs.x64 }}
+          ARM64_HASH: ${{ steps.hashes.outputs.arm64 }}
+          HAS_ARM64: ${{ steps.hashes.outputs.has_arm64 }}
+        run: |
+          set -eu
+          if [ ! -f dist/scoop/localcode.json ]; then
+            echo "::error::Template dist/scoop/localcode.json missing in source repo."
+            exit 1
+          fi
+          # Start from the template; substitute placeholders.
+          mkdir -p rendered
+          cp dist/scoop/localcode.json rendered/localcode.json
+          # Use python for JSON-aware editing — sed would mangle escapes.
+          python3 - <<PY
+          import json, os
+          path = "rendered/localcode.json"
+          with open(path) as f:
+              m = json.load(f)
+          version = os.environ["VERSION"]
+          x64_hash = os.environ["X64_HASH"]
+          has_arm64 = os.environ.get("HAS_ARM64", "false") == "true"
+          arm64_hash = os.environ.get("ARM64_HASH", "")
+
+          m["version"] = version
+          # 64bit
+          a64 = m["architecture"]["64bit"]
+          a64["url"] = a64["url"].replace("__VERSION__", version)
+          a64["hash"] = x64_hash
+          # arm64
+          if has_arm64 and arm64_hash:
+              arm = m["architecture"]["arm64"]
+              arm["url"] = arm["url"].replace("__VERSION__", version)
+              arm["hash"] = arm64_hash
+          else:
+              # Drop arm64 entries entirely if we have no artifact for it.
+              m["architecture"].pop("arm64", None)
+              if "autoupdate" in m and "architecture" in m["autoupdate"]:
+                  m["autoupdate"]["architecture"].pop("arm64", None)
+
+          with open(path, "w") as f:
+              json.dump(m, f, indent=2)
+              f.write("\n")
+          print("--- rendered manifest ---")
+          with open(path) as f:
+              print(f.read())
+          PY
+          # Final syntax check.
+          python3 -c 'import json,sys; json.load(open("rendered/localcode.json"))'
+          echo "Rendered manifest validated"
+
+      - name: Checkout scoop bucket repo
+        uses: actions/checkout@v4
+        with:
+          repository: grosa787/scoop-bucket
+          token: ${{ secrets.SCOOP_BUCKET_PAT }}
+          path: scoop-bucket
+          fetch-depth: 1
+
+      - name: Copy manifest into bucket
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p scoop-bucket/bucket
+          cp rendered/localcode.json scoop-bucket/bucket/localcode.json
+          echo "--- bucket/localcode.json ---"
+          cat scoop-bucket/bucket/localcode.json
+
+      - name: Commit and push to scoop-bucket
+        shell: bash
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -eu
+          cd scoop-bucket
+          git config user.name  "localcode-release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git add bucket/localcode.json
+          if git diff --staged --quiet; then
+            echo "Manifest already up to date — nothing to commit."
+            exit 0
+          fi
+          git commit -m "localcode: update to ${VERSION}"
+          # Default branch is the one we checked out; push back to it.
+          BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+          git push origin "HEAD:${BRANCH}"
+          echo "Pushed manifest update for ${TAG} to grosa787/scoop-bucket@${BRANCH}"

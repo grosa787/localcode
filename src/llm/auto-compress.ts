@@ -105,3 +105,39 @@ export function autoCompressCooldownElapsed(
   if (!Number.isFinite(cooldown) || cooldown < 0) return true;
   return args.now - args.lastCompressAt >= cooldown;
 }
+
+/**
+ * Strategy the auto-compress trigger recommends. The actual selection
+ * inside the compress command is owned by
+ * `chooseCompressStrategy()` in `src/llm/compress-strategy.ts` — this
+ * field is the cheapest-default hint surfaced through the same
+ * decision boundary so callers can short-circuit common cases without
+ * importing the strategy module.
+ *
+ *   - `dedup`     — cheap, no LLM call; safe default.
+ *   - `summarize` — middle-section summary via the cheapest model in
+ *                   the active backend.
+ *   - `truncate`  — head + tail only; used when no cheap model exists.
+ */
+export type AutoCompressStrategy = 'dedup' | 'summarize' | 'truncate';
+
+export interface AutoCompressDecision {
+  /** True if compression should run this turn. */
+  shouldCompress: boolean;
+  /** Strategy hint — `dedup` by default. */
+  strategy: AutoCompressStrategy;
+}
+
+/**
+ * Joint decision wrapper: combines {@link shouldAutoCompress} with
+ * a strategy hint so call sites can pattern-match on a single
+ * object instead of two flags. The strategy defaults to `dedup` —
+ * the cheapest path that's always safe to try first.
+ */
+export function decideAutoCompress(
+  args: ShouldAutoCompressArgs & { strategy?: AutoCompressStrategy },
+): AutoCompressDecision {
+  const shouldCompress = shouldAutoCompress(args);
+  const strategy: AutoCompressStrategy = args.strategy ?? 'dedup';
+  return { shouldCompress, strategy };
+}

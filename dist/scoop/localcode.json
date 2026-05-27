@@ -1,0 +1,32 @@
+{
+  "version": "__VERSION__",
+  "description": "Local-first AI coding assistant — Claude Code clone with 7 backends",
+  "homepage": "https://github.com/grosa787/localcode",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/grosa787/localcode/releases/download/v__VERSION__/localcode-win-x64.zip",
+      "hash": "__SHA256_WIN_X64__",
+      "extract_dir": "localcode-win-x64"
+    },
+    "arm64": {
+      "url": "https://github.com/grosa787/localcode/releases/download/v__VERSION__/localcode-win-arm64.zip",
+      "hash": "__SHA256_WIN_ARM64__",
+      "extract_dir": "localcode-win-arm64"
+    }
+  },
+  "bin": "localcode.exe",
+  "checkver": {
+    "github": "https://github.com/grosa787/localcode"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/grosa787/localcode/releases/download/v$version/localcode-win-x64.zip"
+      },
+      "arm64": {
+        "url": "https://github.com/grosa787/localcode/releases/download/v$version/localcode-win-arm64.zip"
+      }
+    }
+  }
+}

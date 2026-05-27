@@ -54,6 +54,15 @@ jobs:
           - { runner: macos-14,         os_id: darwin, arch: arm64, bun_target: bun-darwin-arm64 }
           - { runner: ubuntu-22.04,     os_id: linux,  arch: x64,   bun_target: bun-linux-x64 }
           - { runner: ubuntu-22.04-arm, os_id: linux,  arch: arm64, bun_target: bun-linux-arm64 }
+          # WINDOWS-BUILD-SECTION ------------------------------------------
+          # Windows support feeds the Scoop manifest (see docs/SCOOP.md and
+          # .github/workflows/release-scoop.yml). Bun 1.3.x only ships a
+          # standalone runtime for windows-x64; windows-arm64 is intentionally
+          # omitted until upstream Bun adds it. The Windows job produces a
+          # .zip (Scoop convention) instead of a .tar.gz — handled inline in
+          # the "Package Windows zip" step below.
+          - { runner: windows-latest,   os_id: win,    arch: x64,   bun_target: bun-windows-x64 }
+          # WINDOWS-BUILD-SECTION-END --------------------------------------
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,7 +115,9 @@ jobs:
           # `bun build --compile` produces a standalone executable that bundles
           # the Bun runtime + our JS. --target=bun-<os>-<arch> cross-compiles by
           # downloading the matching Bun runtime; using the native target on the
-          # native runner avoids that download.
+          # native runner avoids that download. On Windows Bun appends .exe to
+          # --outfile automatically — keep `localcode` here for cross-OS parity
+          # and resolve the actual filename in the packaging step.
           bun build src/cli.tsx \
             --compile \
             --target=${{ matrix.bun_target }} \
@@ -115,18 +126,31 @@ jobs:
             --external chromium-bidi \
             --external electron \
             --outfile out-bin/localcode
-          file out-bin/localcode || true
-          chmod +x out-bin/localcode
+          if [ "${{ matrix.os_id }}" = "win" ]; then
+            ls -la out-bin/
+          else
+            file out-bin/localcode || true
+            chmod +x out-bin/localcode
+          fi
 
       - name: Smoke test binary (native arch only)
-        if: matrix.bun_target == format('bun-{0}-{1}', matrix.os_id, matrix.arch == 'x64' && 'x64' || 'arm64') && !(matrix.os_id == 'linux' && matrix.arch == 'arm64' && runner.arch != 'ARM64')
+        if: matrix.os_id != 'win' && matrix.bun_target == format('bun-{0}-{1}', matrix.os_id, matrix.arch == 'x64' && 'x64' || 'arm64') && !(matrix.os_id == 'linux' && matrix.arch == 'arm64' && runner.arch != 'ARM64')
         shell: bash
         run: |
           set -eu
           ./out-bin/localcode --version || true
           ./out-bin/localcode --help    | head -5 || true
 
-      - name: Package tarball
+      - name: Smoke test binary (Windows)
+        if: matrix.os_id == 'win'
+        shell: bash
+        run: |
+          set -eu
+          ./out-bin/localcode.exe --version || true
+          ./out-bin/localcode.exe --help | head -5 || true
+
+      - name: Package tarball (darwin/linux)
+        if: matrix.os_id != 'win'
         shell: bash
         env:
           SOURCE_DATE_EPOCH: ${{ steps.meta.outputs.epoch }}
@@ -142,13 +166,51 @@ jobs:
             --version "${{ steps.meta.outputs.version }}"
           ls -la dist-release/
 
-      - name: Upload per-platform artifact
+      # WINDOWS-BUILD-SECTION ----------------------------------------------
+      # Windows ships a .zip (Scoop convention) with a single nested folder
+      # `localcode-win-<arch>/` containing `localcode.exe`, LICENSE, README.md
+      # and a VERSION marker. Layout MUST match `extract_dir` in
+      # dist/scoop/localcode.json — Scoop strips that nested folder on install.
+      - name: Package Windows zip
+        if: matrix.os_id == 'win'
+        shell: bash
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.meta.outputs.epoch }}
+        run: |
+          set -eu
+          ASSET="localcode-win-${{ matrix.arch }}"
+          mkdir -p dist-release "stage/${ASSET}"
+          cp out-bin/localcode.exe "stage/${ASSET}/localcode.exe"
+          [ -f LICENSE ]   && cp LICENSE   "stage/${ASSET}/LICENSE"   || true
+          [ -f README.md ] && cp README.md "stage/${ASSET}/README.md" || true
+          printf '%s\n' "${{ steps.meta.outputs.version }}" > "stage/${ASSET}/VERSION"
+          # `7z a` is preinstalled on windows-latest runners and produces a
+          # standard zip readable by Scoop + Windows Explorer.
+          ( cd stage && 7z a -tzip -mx=9 "../dist-release/${ASSET}.zip" "${ASSET}" )
+          cd dist-release
+          sha256sum "${ASSET}.zip" > "${ASSET}.zip.sha256"
+          ls -la
+      # WINDOWS-BUILD-SECTION-END ------------------------------------------
+
+      - name: Upload per-platform artifact (darwin/linux)
+        if: matrix.os_id != 'win'
         uses: actions/upload-artifact@v4
         with:
           name: localcode-${{ matrix.os_id }}-${{ matrix.arch }}
           path: |
             dist-release/localcode-${{ matrix.os_id }}-${{ matrix.arch }}.tar.gz
             dist-release/localcode-${{ matrix.os_id }}-${{ matrix.arch }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload per-platform artifact (Windows)
+        if: matrix.os_id == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: localcode-win-${{ matrix.arch }}
+          path: |
+            dist-release/localcode-win-${{ matrix.arch }}.zip
+            dist-release/localcode-win-${{ matrix.arch }}.zip.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -233,7 +295,10 @@ jobs:
           set -eu
           mkdir -p release
           # Flatten artifacts/<name>/<files> -> release/<files>
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.tar.gz.sha256' -o -name 'sbom.cyclonedx.json' \) \
+          # WINDOWS-BUILD-SECTION: include .zip + .zip.sha256 alongside the
+          # darwin/linux tarballs so the Scoop manifest workflow can pick the
+          # Windows assets up from the GitHub Release.
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.tar.gz.sha256' -o -name '*.zip' -o -name '*.zip.sha256' -o -name 'sbom.cyclonedx.json' \) \
             -exec cp {} release/ \;
           ls -la release/
 
@@ -314,7 +379,14 @@ jobs:
           if compgen -G "localcode-*.patch" >/dev/null; then
             patch_args="$(ls localcode-*.patch)"
           fi
-          sha256sum localcode-*.tar.gz sbom.cyclonedx.json $patch_args > SHA256SUMS
+          # WINDOWS-BUILD-SECTION: include the Windows .zip assets in the
+          # aggregate so `sha256sum --check SHA256SUMS` covers every shipped
+          # archive (tarballs + zips alike).
+          zip_args=""
+          if compgen -G "localcode-*.zip" >/dev/null; then
+            zip_args="$(ls localcode-*.zip)"
+          fi
+          sha256sum localcode-*.tar.gz $zip_args sbom.cyclonedx.json $patch_args > SHA256SUMS
           echo "--- SHA256SUMS ---"
           cat SHA256SUMS
           sha256sum --check SHA256SUMS
@@ -382,6 +454,8 @@ jobs:
             release/localcode-linux-x64.tar.gz.sha256
             release/localcode-linux-arm64.tar.gz
             release/localcode-linux-arm64.tar.gz.sha256
+            release/localcode-win-x64.zip
+            release/localcode-win-x64.zip.sha256
             release/SHA256SUMS
             release/sbom.cyclonedx.json
             release/localcode-*-from-*-to-*.patch

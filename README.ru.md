@@ -35,6 +35,7 @@ localcode --web                      # браузерный UI (откроетс
 - [Поддерживаемые провайдеры](#поддерживаемые-провайдеры)
 - [Требования](#требования)
 - [Установка](#установка)
+- [Docker](#docker)
 - [Быстрый старт](#быстрый-старт)
 - [Флаги CLI](#флаги-cli)
 - [Веб-режим](#веб-режим)
@@ -68,7 +69,19 @@ localcode --web                      # браузерный UI (откроетс
 - **Архитектурные правила** — задавай слои в `.localcode/arch.toml`; PreToolUse-валидатор блокирует запрещённые импорты.
 - **Безопасность из коробки** — pre-commit secret scanner (AWS / GitHub / OpenAI / Anthropic / Stripe / private-key + энтропия), gating чувствительных файлов, редакция.
 - **LAN-шаринг** — mDNS discovery + HMAC pairing + AES-GCM session sync; делись сессией с коллегой по локальной сети без облака.
-- **i18n** — полная локализация на английский и русский, переключение в одно касание.
+- **Многопользовательский web** — две вкладки на одной сессии видят сообщения друг друга в реальном времени, индикаторы typing и цветные точки участников.
+- **Песочница `run_command`** — каждая команда исполняется через `sandbox-exec` (macOS), `firejail` (Linux) или Docker; настраивается на уровне платформы.
+- **Plan mode** — заметный 🔒 баннер + горячая клавиша Ctrl+P; write & run заблокированы пока модель планирует, прежде чем что-либо трогать.
+- **Batch approval** — когда модель отдаёт 3+ mutating tool calls подряд, один 2-панельный диалог покажет их разом.
+- **Crash journal + resume** — синхронный JSONL на каждый chunk; при следующем старте предложит восстановить любую сессию, прерванную SIGKILL / отключением питания.
+- **Прогноз стоимости** — чип `~$0.02 next turn` до отправки; сумма за сессию + за сегодня в footer.
+- **Умное сжатие контекста** — semantic dedup повторных `read_file`, write/run сохраняются дословно, середина суммаризуется дешёвой моделью.
+- **Вставка картинок в TUI** — Ctrl+V вставляет картинку из буфера прямо в диалог (mac / linux / win).
+- **Auto-suggest скиллов** — если сообщение совпадает с regex `triggers` скилла, тост предложит Tab для активации.
+- **Marketplace browse** — `/skills browse` (anthropics/skills) и `/mcp browse` (modelcontextprotocol/servers) ставятся в один клик.
+- **Миграция с Claude Code** — `/import claude-code` импортирует историю из `~/.claude/projects/*/` в локальный SQLite.
+- **Дашборд /metrics** — opt-in: успешность инструментов, % cache hit, стоимость по моделям, топ дорогих сессий — всё локально.
+- **i18n** — полная локализация на английский и русский, переключение в одно касание; все 6 главных overlay'ов полностью переведены.
 
 <br/>
 
@@ -119,6 +132,31 @@ sudo dnf install \
 # arm64: замените x86_64 на aarch64.
 ```
 
+<!-- HOMEBREW-README-SECTION-RU -->
+### Homebrew (macOS и Linux)
+
+```sh
+brew install grosa787/tap/localcode
+```
+
+Автоматически выбирает нужный prebuilt-бинарь для `darwin-arm64`,
+`darwin-x64`, `linux-arm64` или `linux-x64`. Обновление —
+`brew upgrade localcode`. Подробности по бутстрапу tap-репозитория и
+настройке мейнтейнера — в [docs/HOMEBREW.md](docs/HOMEBREW.md).
+<!-- /HOMEBREW-README-SECTION-RU -->
+
+<!-- SCOOP-README-SECTION-RU -->
+### Scoop (Windows)
+
+```sh
+scoop bucket add localcode https://github.com/grosa787/scoop-bucket
+scoop install localcode
+```
+
+Подробности по бутстрапу bucket-репозитория и настройке мейнтейнера —
+в [docs/SCOOP.md](docs/SCOOP.md).
+<!-- /SCOOP-README-SECTION-RU -->
+
 ### Установка одной командой (скрипт)
 
 ```sh
@@ -155,6 +193,39 @@ cd localcode
 bun install
 bun run dev          # алиас для: bun run src/cli.tsx
 ```
+
+<br/>
+
+<!-- DOCKER-README-SECTION-RU -->
+## Docker
+
+LocalCode публикуется как multi-arch образ (`linux/amd64` + `linux/arm64`) в
+GitHub Container Registry: **`ghcr.io/grosa787/localcode`**. Теги: `latest`,
+`vX.Y.Z` и `X.Y.Z` на каждый релиз.
+
+```sh
+# TUI (нужен интерактивный TTY)
+docker run -it --rm \
+  -v "$(pwd):/workspace" \
+  -v "$HOME/.localcode:/root/.localcode" \
+  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  ghcr.io/grosa787/localcode:latest
+
+# Веб-UI (с пробросом порта, без TTY)
+docker run --rm -p 7777:7777 \
+  -v "$(pwd):/workspace" \
+  -v "$HOME/.localcode:/root/.localcode" \
+  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  ghcr.io/grosa787/localcode:latest \
+  --web --web-host 0.0.0.0 --no-open
+```
+
+Для локальных бэкендов (Ollama / LM Studio) на хосте используйте
+`host.docker.internal` (Docker Desktop) или добавьте
+`--add-host=host.docker.internal:host-gateway` на Linux. Полное руководство
+по использованию, авторизации, persistence и compose-рецептам:
+**[docs/DOCKER.md](docs/DOCKER.md)**.
+<!-- /DOCKER-README-SECTION-RU -->
 
 <br/>
 

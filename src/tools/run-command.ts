@@ -3,7 +3,10 @@
  *
  * Two-phase: `previewCommand` returns a human-readable summary plus
  * `requiresApproval: true`. After approval, `executeCommand` actually runs
- * the command via `execa('sh', ['-c', command])`.
+ * the command — routed through a pluggable `SandboxRunner` (sandbox-exec
+ * on macOS, firejail on Linux, optional docker, or passthrough) so even
+ * pre-approved commands cannot freely write outside the project root or
+ * open network sockets when the user has tightened the policy.
  *
  * Output caps (ROADMAP #1):
  *   - stdout and stderr are each truncated independently when their
@@ -13,19 +16,53 @@
  *   - The combined `output` (stdout + optional stderr block) is also
  *     bounded by `TOTAL_CAP_BYTES` (100 KB) as a final safety net so a
  *     single command can never blow up the model's context window.
+ *
+ * Sandbox fallback: when the requested backend is unavailable (e.g.
+ * firejail not installed on Linux), the factory falls back to a
+ * passthrough runner and logs a warning. Sandboxing is best-effort and
+ * never blocks tool execution.
  */
 
 import path from 'node:path';
 import { execa } from 'execa';
 import { z } from 'zod';
 
-import type { RunCommandArgs, ToolContext, ToolResult } from './types';
+import type {
+  RunCommandArgs as SharedRunCommandArgs,
+  ToolContext,
+  ToolResult,
+} from './types';
 import {
   type BackgroundTaskRegistry,
   getProcessBackgroundTaskRegistry,
 } from './background-tasks';
+import {
+  buildSandboxOpts,
+  createSandboxRunner,
+  type SandboxRunner,
+  type SandboxRuntimeConfig,
+} from './sandbox';
 
-/** Zod schema for `run_command` arguments. */
+/**
+ * Local extension of the shared `RunCommandArgs` interface that adds
+ * the per-call `sandbox: false` opt-out. The shared interface in
+ * `src/tools/types.ts` is touched by multiple tools; this file owns
+ * the sandbox-aware shape and threads it through validation via the
+ * Zod schema below.
+ */
+export type RunCommandArgs = SharedRunCommandArgs & {
+  /** Per-call sandbox opt-out. Default true (use the configured backend). */
+  sandbox?: boolean;
+};
+
+/**
+ * Zod schema for `run_command` arguments.
+ *
+ * The optional `sandbox: false` per-call override lets the model
+ * request a passthrough execution for a single command the user
+ * approves — useful for legitimate cases where the sandbox profile is
+ * too tight (e.g. docker-only commands run from outside docker).
+ */
 export const RunCommandArgsSchema = z.object({
   command: z.string().min(1, 'command must be a non-empty string'),
   cwd: z.string().min(1).optional(),
@@ -36,14 +73,32 @@ export const RunCommandArgsSchema = z.object({
    * destructive command still passes through the same approval gate.
    */
   runInBackground: z.boolean().optional(),
+  /**
+   * Per-call sandbox opt-out. When `false`, the sandbox layer is
+   * bypassed for this single invocation regardless of `config.sandbox`.
+   * Defaults to `true` (use whatever backend the config selects).
+   */
+  sandbox: z.boolean().optional(),
 });
 
 /**
  * Extended context — when set, overrides the process-singleton
  * background-task registry. Tests inject a fresh registry through this.
+ *
+ * Optional `sandboxConfig` lets the composition root push the user's
+ * sandbox preferences down into the tool. Absent → the tool builds a
+ * runtime config from the in-built defaults (backend='auto' on the
+ * host platform, allowNetwork=true, no extra write paths) which
+ * preserves the legacy behaviour for any call site that hasn't been
+ * updated yet.
+ *
+ * `sandboxRunner` is a test-only seam — production callers go through
+ * the factory inside `commit`. When set, it short-circuits the factory.
  */
 export interface RunCommandContext extends ToolContext {
   backgroundTasks?: BackgroundTaskRegistry;
+  sandboxConfig?: SandboxRuntimeConfig;
+  sandboxRunner?: SandboxRunner;
 }
 
 const COMMAND_TIMEOUT_MS = 30_000;
@@ -116,6 +171,99 @@ function resolveCwd(ctx: ToolContext, requested?: string): string {
 }
 
 /**
+ * Resolve the sandbox runtime config for the current call. Falls back
+ * to safe defaults (auto-detect backend, network allowed, no extra
+ * write paths, 2-minute upper bound) when the context doesn't supply
+ * one. Keeps behaviour identical to the pre-sandbox baseline on hosts
+ * where no native backend exists — the `none` runner spawns the
+ * command directly through execa.
+ */
+function resolveSandboxConfig(
+  ctx: RunCommandContext,
+): SandboxRuntimeConfig {
+  if (ctx.sandboxConfig !== undefined) return ctx.sandboxConfig;
+  return {
+    backend: 'auto',
+    allowNetwork: true,
+    allowWritePaths: [],
+    timeoutMs: COMMAND_TIMEOUT_MS,
+  };
+}
+
+/**
+ * Resolve (or short-circuit to) the sandbox runner. Honours the
+ * per-call `sandbox: false` opt-out by returning a synthetic runner
+ * that runs the command directly through execa (same as the `none`
+ * backend but without the once-per-process warning, since the user
+ * explicitly opted out).
+ */
+async function executeThroughSandbox(
+  ctx: RunCommandContext,
+  command: string,
+  cwd: string,
+  perCallSandbox: boolean | undefined,
+): Promise<{
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  sandboxed: boolean;
+  timedOut: boolean;
+}> {
+  // Per-call opt-out — bypass sandbox entirely for this command.
+  if (perCallSandbox === false) {
+    const direct = await execa('sh', ['-c', command], {
+      cwd,
+      timeout: COMMAND_TIMEOUT_MS,
+      reject: false,
+      all: false,
+    });
+    return {
+      stdout: typeof direct.stdout === 'string' ? direct.stdout : '',
+      stderr: typeof direct.stderr === 'string' ? direct.stderr : '',
+      exitCode: direct.exitCode ?? -1,
+      sandboxed: false,
+      timedOut: direct.timedOut === true,
+    };
+  }
+
+  const cfg = resolveSandboxConfig(ctx);
+  const runner = ctx.sandboxRunner ?? createSandboxRunner(cfg);
+  const opts = buildSandboxOpts(cfg, cwd);
+  try {
+    const r = await runner.run(command, opts);
+    return {
+      stdout: r.stdout,
+      stderr: r.stderr,
+      exitCode: r.exitCode,
+      sandboxed: r.sandboxed,
+      timedOut: r.timedOut === true,
+    };
+  } catch (err) {
+    // Spawn-level failure (e.g. missing binary not detected by the
+    // factory). Fall back to direct exec rather than blocking the
+    // tool. Log to stderr so users notice.
+    const message = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[localcode] sandbox runner '${runner.id}' failed (${message}); falling back to direct exec.`,
+    );
+    const direct = await execa('sh', ['-c', command], {
+      cwd,
+      timeout: COMMAND_TIMEOUT_MS,
+      reject: false,
+      all: false,
+    });
+    return {
+      stdout: typeof direct.stdout === 'string' ? direct.stdout : '',
+      stderr: typeof direct.stderr === 'string' ? direct.stderr : '',
+      exitCode: direct.exitCode ?? -1,
+      sandboxed: false,
+      timedOut: direct.timedOut === true,
+    };
+  }
+}
+
+/**
  * Cheap preview: validates args, resolves cwd, returns a "will run" message
  * and `requiresApproval: true`. Does NOT execute.
  */
@@ -152,12 +300,14 @@ export async function previewCommand(
 }
 
 /**
- * Actually execute the command via `sh -c`. Honours the 30s timeout and
- * reports stdout + stderr. Non-zero exit becomes `success: false`, timeouts
- * surface a dedicated error message.
+ * Actually execute the command via the configured sandbox runner.
+ * Honours the 30s timeout and reports stdout + stderr. Non-zero exit
+ * becomes `success: false`, timeouts surface a dedicated error message.
  *
- * When `runInBackground` is true, the child is spawned, registered with
- * the `BackgroundTaskRegistry`, and the call returns immediately with a
+ * When `runInBackground` is true, the child is spawned (UNSANDBOXED —
+ * background tasks long-outlive the sandbox profile lifetime and the
+ * isolation requirements are different), registered with the
+ * `BackgroundTaskRegistry`, and the call returns immediately with a
  * `Started background task ...` line. The model is expected to poll via
  * the `monitor` tool.
  */
@@ -224,15 +374,12 @@ export async function executeCommand(
   }
 
   try {
-    const result = await execa('sh', ['-c', parsed.data.command], {
+    const result = await executeThroughSandbox(
+      ctx,
+      parsed.data.command,
       cwd,
-      timeout: COMMAND_TIMEOUT_MS,
-      reject: false,
-      all: false,
-    });
-
-    const rawStdout = typeof result.stdout === 'string' ? result.stdout : '';
-    const rawStderr = typeof result.stderr === 'string' ? result.stderr : '';
+      parsed.data.sandbox,
+    );
 
     if (result.timedOut) {
       return {
@@ -243,8 +390,8 @@ export async function executeCommand(
       };
     }
 
-    const stdout = trimStream(rawStdout, 'stdout');
-    const stderr = trimStream(rawStderr, 'stderr');
+    const stdout = trimStream(result.stdout, 'stdout');
+    const stderr = trimStream(result.stderr, 'stderr');
 
     if (result.exitCode === 0) {
       const combined = stderr ? `${stdout}\n[stderr]\n${stderr}` : stdout;
@@ -255,11 +402,10 @@ export async function executeCommand(
       };
     }
 
-    const code = result.exitCode ?? -1;
     return {
       success: false,
       output: trimCombined(stdout),
-      error: `Exit ${code}: ${stderr}`,
+      error: `Exit ${result.exitCode}: ${stderr}`,
       requiresApproval: true,
     };
   } catch (err) {

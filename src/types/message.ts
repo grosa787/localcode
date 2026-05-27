@@ -410,6 +410,49 @@ export type PostCommitHook = (
   result: ToolResult,
 ) => Promise<ToolResult | null>;
 
+// BATCH-APPROVAL-SECTION
+/**
+ * Single entry in a batch-approval request. The executor builds one of
+ * these per mutating tool call (before invoking the handler) and hands
+ * the full set to `batchApprovalCallback`. The UI uses `toolName` /
+ * `args` to render an item row (filename, command, etc.) and uses
+ * `toolCallId` as the stable map key when returning the decisions.
+ */
+export interface BatchApprovalItem {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly args: Record<string, unknown>;
+}
+
+/**
+ * Per-item decision returned by `batchApprovalCallback`. We deliberately
+ * keep the wire vocabulary narrow (`'approved' | 'rejected'`) so the UI
+ * can't smuggle ambiguous tri-state values through the channel. Any
+ * `toolCallId` missing from the returned map is treated as rejected.
+ */
+export type BatchApprovalDecision = 'approved' | 'rejected';
+
+/**
+ * Batch-approval callback. Receives every mutating tool call in the
+ * current LLM turn and resolves to a map of per-item decisions keyed by
+ * `toolCallId`. The executor commits the approved calls in original
+ * order and synthesises a "User rejected ..." ToolResult for the rest.
+ *
+ * Only fired when:
+ *   - `batchApprovalCallback` is configured on the executor opts,
+ *     AND
+ *   - the count of mutating tool calls in a single `executeAll` invocation
+ *     meets or exceeds `permissions.batchApprovalThreshold` (default 3).
+ *
+ * Below the threshold OR with no callback configured, the executor
+ * falls back to the per-call `approvalCallback` flow (one prompt per
+ * mutating tool, matching legacy behaviour).
+ */
+export type BatchApprovalCallback = (params: {
+  readonly items: readonly BatchApprovalItem[];
+}) => Promise<ReadonlyMap<string, BatchApprovalDecision>>;
+// BATCH-APPROVAL-SECTION-END
+
 export interface ToolExecutorOptions {
   handlers: ToolHandlerMap;
   approvalCallback?: ApprovalCallback;
@@ -473,6 +516,34 @@ export interface ToolExecutorOptions {
    * precedence rules. Default `'default'` preserves legacy behaviour.
    */
   profile?: PermissionProfile;
+  // BATCH-APPROVAL-SECTION
+  /**
+   * Unified batch-approval callback. When supplied AND the count of
+   * mutating tool calls in a single `executeAll` invocation meets or
+   * exceeds {@link batchApprovalThreshold}, the executor calls this
+   * ONCE with every mutating item upfront (instead of firing
+   * {@link approvalCallback} sequentially per call). The UI renders a
+   * single modal where the user reviews all diffs at once and resolves
+   * with a `Map<toolCallId, 'approved' | 'rejected'>`. Below the
+   * threshold OR when undefined, the executor falls back to the
+   * per-call `approvalCallback` flow.
+   *
+   * Sensitive-files matches and read-only calls are NEVER routed
+   * through the batch flow — they always honour the per-call approval
+   * gate (sensitive) or skip approval entirely (read-only).
+   */
+  batchApprovalCallback?: BatchApprovalCallback;
+  /**
+   * Minimum number of mutating tool calls required in a single
+   * `executeAll` invocation to trigger {@link batchApprovalCallback}.
+   * Default 3 — multi-file refactor threshold. Range 1..99 enforced
+   * upstream (see `permissions.batchApprovalThreshold` in
+   * `src/config/types.ts`); the executor accepts the value verbatim.
+   * Setting to 1 makes every mutating call route through the batch UI;
+   * setting to 99 effectively disables the batch flow.
+   */
+  batchApprovalThreshold?: number;
+  // BATCH-APPROVAL-SECTION-END
 }
 
 /**

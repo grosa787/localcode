@@ -383,3 +383,22 @@
   color: var(--text-primary);
 }
 /* /AGENT-REPLY-SECTION */
+
+/* PRESENCE-SECTION — peer typing strip above the textarea. */
+.typingStrip {
+  font-size: 11px;
+  color: var(--text-faint, rgba(255, 255, 255, 0.55));
+  font-style: italic;
+  padding: 2px 14px 4px 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.typingStrip::before {
+  content: '\2728';
+  font-style: normal;
+  opacity: 0.7;
+}
+/* /PRESENCE-SECTION */

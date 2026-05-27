@@ -37,6 +37,11 @@ import {
   APPROVAL_REQUIRED_TOOLS,
   KNOWN_TOOL_NAMES,
   type ApprovalCallback,
+  // BATCH-APPROVAL-SECTION
+  type BatchApprovalCallback,
+  type BatchApprovalDecision,
+  type BatchApprovalItem,
+  // BATCH-APPROVAL-SECTION-END
   type ToolExecutorOptions,
   type ToolExecutorHookBridge,
   type ToolHandlerMap,
@@ -136,6 +141,36 @@ const APPROVAL_REQUIRED_TOOLS_EXTRA: ReadonlySet<string> = new Set([
   'browser_evaluate',
 ]);
 
+/**
+ * Tools the executor may fire speculatively in parallel with the
+ * approval prompt of a sibling mutating call. Every entry MUST be a
+ * pure read of project state — no filesystem mutations, no shell
+ * execution, no network side-effects whose result is order-dependent
+ * with the rest of the batch. Mirrors the `readOnly: true` markers on
+ * `createToolHandlerMap` in `src/tools/index.ts`.
+ *
+ * Adding to this catalogue is a contract change — every name added
+ * here must have:
+ *   1. A `readOnly: true` marker on its handler entry, AND
+ *   2. A speculative-safety review (no shared state with other tools
+ *      in the same batch, no LLM-observable ordering with mutations).
+ *
+ * Conservative omissions: `git_status`, `git_log`, `git_branch`,
+ * `git_diff`, `web_fetch`, `web_search`, `notebook_read`, `read_pdf`,
+ * `monitor`, `process_status`, ontology queries, and MCP tools are
+ * effectively read-only at the executor layer but are NOT listed here
+ * because they were not part of the original task's marked set. Future
+ * passes can extend the catalogue once each name is audited.
+ */
+const SPECULATIVE_READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  'read_file',
+  'list_dir',
+  'glob_search',
+  'lint_file',
+  'find_symbol',
+  'fetch_image',
+]);
+
 /** Extensions we know how to lint. Keep in sync with `lint-file.ts`. */
 const LINTABLE_EXTENSIONS: ReadonlySet<string> = new Set([
   '.ts',
@@ -222,14 +257,21 @@ const EDIT_TOOLS: ReadonlySet<string> = new Set([
   'notebook_edit',
 ]);
 
+// PLAN-MODE-BLOCK-SECTION
 /**
  * Plan-mode reject message. Surfaced as the `error` field (NOT `output`)
  * so the model treats it as instruction rather than tool output. Same
  * wording is used for all blocked tools so the model can reliably
  * pattern-match.
+ *
+ * The block decision itself lives in `resolveApprovalPolicy` (rule 2)
+ * and the short-circuit point is `execute()` — both are wrapped in
+ * PLAN-MODE-BLOCK-SECTION markers below so parallel agents touching
+ * this file know where the plan-mode pipeline lives.
  */
 const PLAN_MODE_BLOCK_ERROR =
   'Plan mode active — summarize your plan and exit Plan Mode (/profile default) to execute.';
+// PLAN-MODE-BLOCK-SECTION-END
 
 /**
  * Approval-policy decision for a single tool call. Drives the `execute`
@@ -325,6 +367,35 @@ export class ToolExecutor {
    * "global escape hatch" contract).
    */
   private readonly profile: PermissionProfile;
+  // BATCH-APPROVAL-SECTION
+  /**
+   * Unified batch-approval callback. Fired ONCE per `executeAll`
+   * invocation when the mutating-call count meets the configured
+   * threshold. When undefined, the executor falls back to the per-call
+   * approval flow.
+   */
+  private readonly batchApprovalCallback: BatchApprovalCallback | undefined;
+  /**
+   * Threshold at which `executeAll` routes its mutating calls through
+   * the batch callback. Default 3 — matches the typed default in
+   * `permissions.batchApprovalThreshold`. Below the threshold, the
+   * executor uses sequential single-call approval (existing flow).
+   */
+  private readonly batchApprovalThreshold: number;
+  /**
+   * One-shot per-call-ID bypass populated by the batch flow BEFORE
+   * invoking `execute()` per approved item. `execute()` consults this
+   * set and skips the per-call approval prompt for IDs present here
+   * (atomically removing the id so re-entry can't double-bypass).
+   *
+   * Rejected items are NOT pre-stamped — `executeAll` synthesises a
+   * "User rejected" ToolResult for them directly so they bypass the
+   * speculative-reads chain (whose "prior rejection cascades to
+   * subsequent mutators" rule would otherwise override the user's
+   * explicit per-item decisions).
+   */
+  private batchApprovedCallIds: Set<string> = new Set();
+  // BATCH-APPROVAL-SECTION-END
 
   constructor(options: ToolExecutorOptions) {
     this.handlers = options.handlers;
@@ -340,6 +411,18 @@ export class ToolExecutor {
     this.projectRoot = options.projectRoot ?? process.cwd();
     this.sessionId = options.sessionId;
     this.profile = options.profile ?? 'default';
+    // BATCH-APPROVAL-SECTION
+    this.batchApprovalCallback = options.batchApprovalCallback;
+    // Clamp the threshold to the schema-enforced range (1..99). Callers
+    // upstream already validate via Zod; this guard exists so a direct
+    // ToolExecutor instantiation (tests, ad-hoc tooling) that supplies
+    // an out-of-range value still degrades to the default.
+    const t = options.batchApprovalThreshold;
+    this.batchApprovalThreshold =
+      typeof t === 'number' && Number.isFinite(t) && t >= 1 && t <= 99
+        ? Math.floor(t)
+        : 3;
+    // BATCH-APPROVAL-SECTION-END
     // FILE-WATCHER-SECTION
     this.fileTracker = getProcessFileChangeTracker();
     // FILE-WATCHER-SECTION-END
@@ -577,10 +660,14 @@ export class ToolExecutor {
       };
     }
 
+    // PLAN-MODE-BLOCK-SECTION
     // Profile-aware policy resolution. Plan-mode block MUST short-
     // circuit BEFORE the PreToolUse hook fires and BEFORE preview, so
     // the executor never invokes any side-effecting code path for a
-    // blocked tool.
+    // blocked tool. The decision is centralised in
+    // `resolveApprovalPolicy` (rule 2: `profile === 'plan'` AND the
+    // tool is an edit-or-command tool); only the short-circuit /
+    // error-shape lives here.
     const basePolicy = this.resolveApprovalPolicy(name);
     if (basePolicy === 'block') {
       return {
@@ -589,6 +676,7 @@ export class ToolExecutor {
         error: PLAN_MODE_BLOCK_ERROR,
       };
     }
+    // PLAN-MODE-BLOCK-SECTION-END
     // SENSITIVE-FILES-SECTION
     // Sensitive-files override: if ANY referenced path matches the
     // catalog (defaults + global + project), force the approval prompt
@@ -612,6 +700,17 @@ export class ToolExecutor {
     }
     // SENSITIVE-FILES-SECTION-END
     if (policy === 'prompt') {
+      // BATCH-APPROVAL-SECTION
+      // One-shot per-call-ID bypass set by `executeAll` after the
+      // batch approval modal resolved (approved item). Sensitive
+      // matches are NEVER pre-stamped (they take the per-call
+      // sensitive prompt), so it is safe to skip the gate without
+      // re-checking sensitivity here. Consuming the id (delete-then-
+      // proceed) makes the bypass strictly one-shot.
+      if (this.batchApprovedCallIds.has(toolCall.id) && sensitiveMatch === null) {
+        this.batchApprovedCallIds.delete(toolCall.id);
+      } else
+      // BATCH-APPROVAL-SECTION-END
       // APPROVAL-BATCH-SECTION
       // Session-scoped run_command allow-list — if the model invoked an
       // identical command earlier in this session AND the user pressed
@@ -799,20 +898,238 @@ export class ToolExecutor {
   }
 
   /**
-   * Execute a batch of tool calls sequentially. Sequential (not parallel)
-   * because approvals need a deterministic UI flow and some tools mutate
-   * the filesystem.
+   * Execute a batch of tool calls. Read-only calls (see
+   * {@link SPECULATIVE_READ_ONLY_TOOLS}) fire immediately and run in
+   * parallel with any mutating call that is blocked on the approval
+   * prompt — saving 100–300ms per turn when the model batches reads
+   * with a write. Mutating calls still serialise relative to each
+   * other so the approval UI stays deterministic and filesystem
+   * mutations preserve their declared order.
+   *
+   * Result ordering: the returned array always mirrors the input
+   * `toolCalls` order — the LLM correlates results to calls by index,
+   * so any reorder would corrupt the conversation.
+   *
+   * Speculative-safety predicate: a call participates in the parallel
+   * fast-path iff its tool name is in `SPECULATIVE_READ_ONLY_TOOLS`
+   * AND the call's args do NOT match the sensitive-files catalog. The
+   * sensitive override forces every match through the approval prompt,
+   * so speculation would race the prompt and surface stale results.
+   *
+   * Rejection semantics: if a mutating tool's approval is rejected,
+   * any subsequent MUTATING tools in the batch are skipped (the user
+   * already declined intent for the mutation series). Already-fired
+   * reads still resolve into the results array. Reads requested AFTER
+   * the rejected mutator have already started; they complete normally.
    */
   async executeAll(
     toolCalls: readonly ToolCall[]
   ): Promise<Array<{ toolCall: ToolCall; result: ToolResult }>> {
-    const results: Array<{ toolCall: ToolCall; result: ToolResult }> = [];
-    for (const call of toolCalls) {
-      const result = await this.execute(call);
-      results.push({ toolCall: call, result });
+    if (toolCalls.length === 0) return [];
+
+    // BATCH-APPROVAL-SECTION
+    // When the count of mutating, non-sensitive, prompt-policy calls
+    // meets the configured threshold AND a batchApprovalCallback is
+    // configured, fire the unified batch modal upfront and short-circuit
+    // the speculative-reads dispatcher path: rejected items resolve to
+    // a synthetic "User rejected" ToolResult WITHOUT going through the
+    // chain (so the chain's "prior rejection cascades to subsequent
+    // mutators" rule doesn't override the user's explicit per-item
+    // decisions). Approved items get a one-shot per-id bypass so their
+    // `execute()` call skips the per-call approval prompt. Read-only
+    // and sensitive siblings flow through the standard path below.
+    if (this.batchApprovalCallback !== undefined) {
+      const eligible = this.collectBatchEligible(toolCalls);
+      if (eligible.length >= this.batchApprovalThreshold) {
+        const items: BatchApprovalItem[] = eligible.map((call) => ({
+          toolCallId: call.id,
+          toolName: call.name,
+          args: call.arguments,
+        }));
+        let decisions: ReadonlyMap<string, BatchApprovalDecision>;
+        try {
+          decisions = await this.batchApprovalCallback({ items });
+        } catch {
+          // Treat dialog failure as a full rejection — every eligible
+          // mutator becomes a "User rejected" result.
+          decisions = new Map(
+            eligible.map((c) => [c.id, 'rejected' as BatchApprovalDecision]),
+          );
+        }
+        // Bypass the speculative-reads chain entirely: drive each call
+        // serially, returning a synthetic rejection for the items the
+        // user declined and pre-stamping the approved ones so the
+        // single-call `execute()` skips its per-call prompt.
+        //
+        // Membership in `eligibleIds` is the discriminator: every
+        // eligible item is in scope of the batch dialog (even when the
+        // decision map omits it — Esc / cancel coerces missing items
+        // to rejected per the spec). Non-eligible items (read-only,
+        // sensitive) flow through `execute()` normally.
+        const eligibleIds = new Set<string>(items.map((it) => it.toolCallId));
+        const out: Array<{ toolCall: ToolCall; result: ToolResult }> = [];
+        for (const call of toolCalls) {
+          if (eligibleIds.has(call.id)) {
+            const d = decisions.get(call.id);
+            if (d === 'approved') {
+              this.batchApprovedCallIds.add(call.id);
+              const result = await this.execute(call);
+              out.push({ toolCall: call, result });
+            } else {
+              // 'rejected' OR missing from the decision map — both
+              // coerce to a synthetic rejection.
+              out.push({
+                toolCall: call,
+                result: {
+                  success: false,
+                  output: '',
+                  error: `User rejected ${call.name} call`,
+                },
+              });
+            }
+            continue;
+          }
+          // Non-batched item (read-only sibling, sensitive, etc.) —
+          // run normally through `execute()`.
+          const result = await this.execute(call);
+          out.push({ toolCall: call, result });
+        }
+        return out;
+      }
     }
-    return results;
+    // BATCH-APPROVAL-SECTION-END
+
+    // Per-index promise that resolves to that call's `ToolResult`.
+    // Read-only calls start immediately. Mutating calls chain off a
+    // single sentinel (`mutationChain`) so the UI only ever shows ONE
+    // approval prompt at a time and filesystem mutations stay in
+    // declared order. The reads still race against the mutation chain
+    // because they don't await it.
+    const resultPromises: Array<Promise<ToolResult>> = new Array<
+      Promise<ToolResult>
+    >(toolCalls.length);
+
+    // Tracks the "previous mutating call finished" boundary. A new
+    // mutating call awaits this before starting so two approval
+    // prompts never overlap and `runApprovalGate`'s turn-scoped /
+    // session-scoped allow-list mutations stay race-free. The chain
+    // ALSO carries a flag indicating whether the user rejected the
+    // previous mutation, which short-circuits subsequent mutators
+    // (see `executeAll` doc-comment for the consent rationale).
+    let mutationChain: Promise<{ rejected: boolean }> = Promise.resolve({
+      rejected: false,
+    });
+
+    for (let i = 0; i < toolCalls.length; i += 1) {
+      const call = toolCalls[i];
+      if (call === undefined) continue;
+      if (this.isSpeculativeReadOnly(call)) {
+        // Speculative path — fire immediately. The `.catch` re-wraps
+        // any thrown error (rare; `execute` itself wraps thrown
+        // handler errors) into a structured ToolResult so the result
+        // array is uniform and no unhandled rejection escapes.
+        resultPromises[i] = this.execute(call).catch(
+          (err: unknown): ToolResult => ({
+            success: false,
+            output: '',
+            error: `Tool "${call.name}" threw: ${errorMessage(err)}`,
+          }),
+        );
+        continue;
+      }
+
+      // Mutating path — chain off the previous mutation so approval
+      // prompts and FS writes serialise. `mutationChain` resolves
+      // with `{ rejected }`; if true we synthesise a "skipped"
+      // result without ever calling the handler.
+      const callForChain = call;
+      const next = mutationChain.then(async ({ rejected }) => {
+        if (rejected) {
+          return {
+            success: false,
+            output: '',
+            error: `Skipped ${callForChain.name}: prior approval was rejected this turn`,
+          } satisfies ToolResult;
+        }
+        return this.execute(callForChain);
+      });
+      resultPromises[i] = next;
+      // Advance the chain. Use `.then` not `.catch` because `execute`
+      // already returns structured errors; the only way `next` can
+      // reject is a bug inside `execute`, in which case we propagate.
+      mutationChain = next.then((r) => ({ rejected: isApprovalRejection(r) }));
+    }
+
+    // Await every index in input order. `Promise.all` on the array
+    // preserves index ordering by construction.
+    const settled = await Promise.all(resultPromises);
+    const out: Array<{ toolCall: ToolCall; result: ToolResult }> = [];
+    for (let i = 0; i < toolCalls.length; i += 1) {
+      const call = toolCalls[i];
+      const result = settled[i];
+      if (call === undefined || result === undefined) continue;
+      out.push({ toolCall: call, result });
+    }
+    return out;
   }
+
+  /**
+   * Decide whether a tool call can be fired speculatively in parallel
+   * with the approval prompt of a sibling mutating call. True iff:
+   *   - The tool name is in {@link SPECULATIVE_READ_ONLY_TOOLS}
+   *     (the static catalogue of side-effect-free tools); AND
+   *   - The call's args do NOT match the sensitive-files catalogue
+   *     (sensitive matches force the approval prompt — speculating
+   *     would race the prompt and surface a stale read).
+   *
+   * Kept conservative on purpose: false positives (treating a
+   * mutating tool as read-only) corrupt state; false negatives (a
+   * read-only tool slipping into the serial path) only forfeit
+   * latency. The catalogue lists exactly the six tools the task
+   * marks `readOnly: true` in `createToolHandlerMap`.
+   */
+  private isSpeculativeReadOnly(call: ToolCall): boolean {
+    if (!SPECULATIVE_READ_ONLY_TOOLS.has(call.name)) return false;
+    // Sensitive-path matches force the approval prompt regardless of
+    // the read-only label; speculate-then-prompt is not the contract
+    // the catalogue promises. Mirror the same loader the hot path
+    // uses so the decision stays consistent with `execute()`.
+    const sensitive = this.detectSensitivePath(call.name, call.arguments);
+    return sensitive === null;
+  }
+
+  // BATCH-APPROVAL-SECTION
+  /**
+   * Compute the subset of tool calls eligible for the unified batch
+   * approval flow. A call is eligible iff:
+   *   - its current approval policy resolves to `'prompt'`, AND
+   *   - its args do NOT match the sensitive-files catalog (sensitive
+   *     matches force a per-call prompt regardless of profile).
+   *
+   * Read-only calls resolve to `'auto'` so they're excluded. Plan-mode
+   * blocked calls resolve to `'block'` and are also excluded
+   * (`execute()` rejects them upfront with the standard error).
+   */
+  private collectBatchEligible(
+    toolCalls: readonly ToolCall[],
+  ): readonly ToolCall[] {
+    const out: ToolCall[] = [];
+    for (const call of toolCalls) {
+      if (call === undefined) continue;
+      const policy = this.resolveApprovalPolicy(call.name);
+      if (policy !== 'prompt') continue;
+      const sensitive = this.detectSensitivePath(call.name, call.arguments);
+      if (sensitive !== null) continue;
+      out.push(call);
+    }
+    return out;
+  }
+
+  /** Test/diagnostic accessor — current one-shot batch-approved set. */
+  getBatchApprovedCallIds(): ReadonlySet<string> {
+    return this.batchApprovedCallIds;
+  }
+  // BATCH-APPROVAL-SECTION-END
 
   // ---------- Internals ----------
 
@@ -1406,6 +1723,26 @@ function errorMessage(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+/**
+ * True iff the `ToolResult` describes a user-driven approval rejection.
+ * Used by `executeAll` to short-circuit subsequent mutating tools in
+ * the same batch after the user clicked "No" on a previous approval
+ * prompt — running another mutator unsupervised would violate the
+ * intent the user just declined.
+ *
+ * We match the error prefix the executor emits in `runApprovalGate`
+ * and `runArchCheck`. Keeping the matcher local to the executor means
+ * the contract is testable from a single spec file.
+ */
+function isApprovalRejection(result: ToolResult): boolean {
+  if (result.success) return false;
+  const err = result.error ?? '';
+  return (
+    err.startsWith('User rejected ') ||
+    err.includes('(architecture violations:')
+  );
 }
 
 /** Safely pull the `path` field out of arbitrary tool args. */

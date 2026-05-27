@@ -39,6 +39,77 @@ export interface PendingQueueItem {
 
 export type { AgentsConfigSnapshot } from '../../../src/web/protocol/rest-types.js';
 
+// PRESENCE-SECTION
+/**
+ * Per-peer state mirrored from server `presence` frames. Keyed by
+ * `userId` (stable per-tab from localStorage). `lastSeenMs` is the
+ * server-stamped timestamp; the UI ages out peers after
+ * {@link PRESENCE_VISIBLE_WINDOW_MS} so a disconnected tab disappears
+ * even if the server's reaper hasn't fired yet.
+ */
+export interface PeerInfo {
+  userId: string;
+  displayName: string;
+  typing: boolean;
+  lastSeenMs: number;
+}
+
+/** Window after which a peer with no fresh heartbeat is dropped from the UI. */
+export const PRESENCE_VISIBLE_WINDOW_MS = 30_000;
+
+/** localStorage key for this tab's stable userId. */
+export const PRESENCE_USER_ID_KEY = 'localcode.web.presence.userId';
+/** localStorage key for the user-chosen displayName. */
+export const PRESENCE_DISPLAY_NAME_KEY = 'localcode.web.presence.displayName';
+
+/**
+ * Generate (or read) a stable per-tab userId. Persisted in localStorage so
+ * the same identity survives full reloads — exactly the multi-user
+ * collaboration semantics the spec calls for.
+ */
+export function getOrCreatePresenceUserId(): string {
+  if (typeof window === 'undefined') {
+    return `user-${Math.random().toString(36).slice(2, 6)}`;
+  }
+  try {
+    const existing = window.localStorage.getItem(PRESENCE_USER_ID_KEY);
+    if (existing !== null && existing.length > 0) return existing;
+  } catch {
+    /* ignored */
+  }
+  let fresh: string;
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    fresh = crypto.randomUUID();
+  } else {
+    fresh = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+  try {
+    window.localStorage.setItem(PRESENCE_USER_ID_KEY, fresh);
+  } catch {
+    /* ignored */
+  }
+  return fresh;
+}
+
+/**
+ * Generate (or read) the displayName for this tab. Defaults to
+ * `user-XXXX` where XXXX is the first 4 chars of the userId, so two
+ * tabs that share a userId render the same label without coordination.
+ */
+export function getOrCreatePresenceDisplayName(userId: string): string {
+  if (typeof window === 'undefined') {
+    return `user-${userId.slice(0, 4)}`;
+  }
+  try {
+    const existing = window.localStorage.getItem(PRESENCE_DISPLAY_NAME_KEY);
+    if (existing !== null && existing.length > 0) return existing;
+  } catch {
+    /* ignored */
+  }
+  return `user-${userId.slice(0, 4)}`;
+}
+// PRESENCE-SECTION-END
+
 export type { PerProviderConfig, PluginSummary, SkillSummary } from '../../../src/web/protocol/rest-types.js';
 
 export interface ConnectionState {
@@ -782,6 +853,20 @@ export interface AppState {
    */
   sessionMessagesOrder: string[];
 
+  // PRESENCE-SECTION
+  /**
+   * Per-session map of active peers keyed by `userId`. Updated by the
+   * inbound WS `presence` handler in App.tsx. Aged out by a 5s tick
+   * effect on the host component (ChatView) so peers whose heartbeats
+   * stop are dropped from the UI within {@link PRESENCE_VISIBLE_WINDOW_MS}.
+   */
+  peers: Record<string, Record<string, PeerInfo>>;
+  /** Stable per-tab userId derived from localStorage. */
+  myPresenceUserId: string;
+  /** User-editable displayName for THIS tab. */
+  myPresenceDisplayName: string;
+  // PRESENCE-SECTION-END
+
   // QUEUE-NEXT-STORE-SECTION — start
   // Queued user messages (typed while a turn is streaming).
   // Per-tab in-memory only; oldest-first (FIFO).
@@ -916,6 +1001,27 @@ export interface AppState {
   /** Clear without returning — bound to the QueueIndicator "Clear" button. */
   clearPendingQueue: () => void;
   // QUEUE-NEXT-STORE-SECTION — end
+  // PRESENCE-SECTION
+  /**
+   * Upsert a peer entry under `sessionId`. Used by App.tsx's inbound WS
+   * handler whenever a `presence` frame arrives. Filters out OUR own
+   * userId so we never show ourselves in the peer list.
+   */
+  upsertPeer: (sessionId: string, peer: PeerInfo) => void;
+  /**
+   * Drop a peer entirely (e.g. after the disconnect "left" frame or the
+   * local age-out tick). Silent no-op when unknown.
+   */
+  removePeer: (sessionId: string, userId: string) => void;
+  /**
+   * Sweep peers older than {@link PRESENCE_VISIBLE_WINDOW_MS}. Run on a
+   * short interval by the host component so stale entries vanish even
+   * if their disconnect frame was lost.
+   */
+  sweepStalePeers: (now?: number) => void;
+  /** Change the displayName for THIS tab and persist to localStorage. */
+  setPresenceDisplayName: (name: string) => void;
+  // PRESENCE-SECTION-END
   setSessionMessages: (sessionId: string, msgs: readonly WireChatMessage[]) => void;
   /**
    * Reference-stable variant. If `msgs` is the exact same array (by
@@ -1483,6 +1589,14 @@ export const useStore = create<AppState>((set) => ({
   sessionSearchOpen: false,
   deleteSessionHandler: null,
   pendingQueue: [],
+  // PRESENCE-SECTION
+  peers: {},
+  myPresenceUserId: getOrCreatePresenceUserId(),
+  myPresenceDisplayName: (() => {
+    const uid = getOrCreatePresenceUserId();
+    return getOrCreatePresenceDisplayName(uid);
+  })(),
+  // PRESENCE-SECTION-END
   sessionMessages: {},
   sessionMessageIds: {},
   sessionMessagesOrder: [],
@@ -1895,6 +2009,78 @@ export const useStore = create<AppState>((set) => ({
   },
   clearPendingQueue: () => set({ pendingQueue: [] }),
   // QUEUE-NEXT-STORE-SECTION — end
+  // PRESENCE-SECTION
+  upsertPeer: (sessionId, peer) =>
+    set((st) => {
+      // Never store our own userId — we know who we are. Defense in
+      // depth: the server is supposed to skip us in fanout already.
+      if (peer.userId === st.myPresenceUserId) return st;
+      const existing = st.peers[sessionId] ?? {};
+      const current = existing[peer.userId];
+      // Identity short-circuit when nothing actually changed (typing
+      // hasn't flipped and the heartbeat is within 250 ms — protects
+      // against subscriber re-renders on every keystroke from a chatty
+      // peer).
+      if (
+        current !== undefined &&
+        current.typing === peer.typing &&
+        current.displayName === peer.displayName &&
+        peer.lastSeenMs - current.lastSeenMs < 250
+      ) {
+        return st;
+      }
+      return {
+        peers: {
+          ...st.peers,
+          [sessionId]: { ...existing, [peer.userId]: peer },
+        },
+      };
+    }),
+  removePeer: (sessionId, userId) =>
+    set((st) => {
+      const existing = st.peers[sessionId];
+      if (existing === undefined || existing[userId] === undefined) return st;
+      const nextBucket: Record<string, PeerInfo> = {};
+      for (const [k, v] of Object.entries(existing)) {
+        if (k === userId) continue;
+        nextBucket[k] = v;
+      }
+      return {
+        peers: { ...st.peers, [sessionId]: nextBucket },
+      };
+    }),
+  sweepStalePeers: (now) =>
+    set((st) => {
+      const cutoff = (now ?? Date.now()) - PRESENCE_VISIBLE_WINDOW_MS;
+      let mutated = false;
+      const nextPeers: Record<string, Record<string, PeerInfo>> = {};
+      for (const [sid, bucket] of Object.entries(st.peers)) {
+        const nextBucket: Record<string, PeerInfo> = {};
+        for (const [uid, peer] of Object.entries(bucket)) {
+          if (peer.lastSeenMs < cutoff) {
+            mutated = true;
+            continue;
+          }
+          nextBucket[uid] = peer;
+        }
+        nextPeers[sid] = nextBucket;
+      }
+      if (!mutated) return st;
+      return { peers: nextPeers };
+    }),
+  setPresenceDisplayName: (name) => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) return;
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(PRESENCE_DISPLAY_NAME_KEY, trimmed);
+      } catch {
+        /* ignored */
+      }
+    }
+    set({ myPresenceDisplayName: trimmed });
+  },
+  // PRESENCE-SECTION-END
   setSessionMessages: (sessionId, msgs) =>
     set((st) => applySetSessionMessages(st, sessionId, msgs)),
   setSessionMessagesIfChanged: (sessionId, msgs) =>

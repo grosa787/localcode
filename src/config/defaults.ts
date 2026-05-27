@@ -268,6 +268,9 @@ export function getDefaultConfig(backend: Backend): Config {
     permissions: {
       autoApprove: [],
       profile: 'default',
+      // BATCH-APPROVAL-SECTION
+      batchApprovalThreshold: 3,
+      // BATCH-APPROVAL-SECTION-END
     },
     context: {
       maxTokens: DEFAULTS.context.maxTokens,

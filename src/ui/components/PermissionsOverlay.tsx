@@ -21,6 +21,9 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { noxPalette, textMuted, theme } from '../theme.js';
 import type { AppConfig, AutoApprovableTool } from '../../types/global.js';
+// I18N-STRINGS-START
+import { useT } from '../../i18n/index.js';
+// I18N-STRINGS-END
 
 export interface PermissionsOverlayProps {
   readonly config: AppConfig;
@@ -34,23 +37,47 @@ export interface PermissionsOverlayProps {
  * only or preview-only (no disk side-effects) and therefore always
  * auto-approved regardless of config.
  */
+// I18N-STRINGS-START
+// `noteKey` lookups go through the i18n `t()` so this overlay reflects
+// the active locale. Tool names themselves stay English on purpose —
+// they're the literal handler ids LocalCode dispatches against.
+type NoteKey =
+  | 'permissions.note.alwaysOn'
+  | 'permissions.note.alwaysOnDiff'
+  | 'permissions.note.grantPrompt';
+
 interface Row {
   readonly name: string;
   readonly tool?: AutoApprovableTool;
   readonly alwaysOn: boolean;
-  readonly note?: string;
+  readonly noteKey?: NoteKey;
 }
 
 const ROWS: readonly Row[] = [
-  { name: 'read_file', alwaysOn: true, note: 'always auto-approved' },
-  { name: 'list_dir', alwaysOn: true, note: 'always auto-approved' },
-  { name: 'glob_search', alwaysOn: true, note: 'always auto-approved' },
-  { name: 'edit_file', alwaysOn: true, note: 'always auto-approved, shows diff' },
-  { name: 'write_file', tool: 'write_file', alwaysOn: false, note: 'grant? (space)' },
-  { name: 'run_command', tool: 'run_command', alwaysOn: false, note: 'grant? (space)' },
-  { name: 'fetch_image', alwaysOn: true, note: 'always auto-approved' },
-  { name: 'lint_file', alwaysOn: true, note: 'always auto-approved' },
+  { name: 'read_file', alwaysOn: true, noteKey: 'permissions.note.alwaysOn' },
+  { name: 'list_dir', alwaysOn: true, noteKey: 'permissions.note.alwaysOn' },
+  { name: 'glob_search', alwaysOn: true, noteKey: 'permissions.note.alwaysOn' },
+  {
+    name: 'edit_file',
+    alwaysOn: true,
+    noteKey: 'permissions.note.alwaysOnDiff',
+  },
+  {
+    name: 'write_file',
+    tool: 'write_file',
+    alwaysOn: false,
+    noteKey: 'permissions.note.grantPrompt',
+  },
+  {
+    name: 'run_command',
+    tool: 'run_command',
+    alwaysOn: false,
+    noteKey: 'permissions.note.grantPrompt',
+  },
+  { name: 'fetch_image', alwaysOn: true, noteKey: 'permissions.note.alwaysOn' },
+  { name: 'lint_file', alwaysOn: true, noteKey: 'permissions.note.alwaysOn' },
 ];
+// I18N-STRINGS-END
 
 function PermissionsOverlay({
   config,
@@ -58,6 +85,9 @@ function PermissionsOverlay({
   onAcceptAll,
   onClose,
 }: PermissionsOverlayProps): React.JSX.Element {
+  // I18N-STRINGS-START
+  const { t } = useT();
+  // I18N-STRINGS-END
   // Only rows that can be toggled participate in arrow-navigation.
   const selectableIndices = useMemo(() => {
     const out: number[] = [];
@@ -139,9 +169,11 @@ function PermissionsOverlay({
       paddingY={1}
     >
       <Box>
+        {/* I18N-STRINGS-START */}
         <Text color={noxPalette.white} bold>
-          Permissions
+          {t('permissions.title')}
         </Text>
+        {/* I18N-STRINGS-END */}
       </Box>
       <Box flexDirection="column" marginTop={1}>
         {ROWS.map((row, i) => {
@@ -151,7 +183,9 @@ function PermissionsOverlay({
           const arrow = active ? '❯ ' : '  ';
           const nameColour = row.alwaysOn ? textMuted : noxPalette.white;
           const checkColour = checked ? noxPalette.light : textMuted;
-          const noteText = row.note !== undefined ? `— ${row.note}` : '';
+          // I18N-STRINGS-START
+          const noteText = row.noteKey !== undefined ? `— ${t(row.noteKey)}` : '';
+          // I18N-STRINGS-END
           return (
             <Box key={`perm-${i}`} flexDirection="row">
               <Text color={active ? noxPalette.light : textMuted}>{arrow}</Text>
@@ -165,16 +199,25 @@ function PermissionsOverlay({
         })}
       </Box>
       <Box marginTop={1} flexDirection="row">
-        <Text color={textMuted}>(enter) accept all   </Text>
-        <Text color={textMuted}>(a) accept all   </Text>
-        <Text color={textMuted}>(space) toggle   </Text>
-        <Text color={textMuted}>(esc) close</Text>
+        {/* I18N-STRINGS-START */}
+        <Text color={textMuted}>{t('permissions.footer.enter')}   </Text>
+        <Text color={textMuted}>{t('permissions.footer.a')}   </Text>
+        <Text color={textMuted}>{t('permissions.footer.space')}   </Text>
+        <Text color={textMuted}>{t('permissions.footer.esc')}</Text>
+        {/* I18N-STRINGS-END */}
       </Box>
       <Box marginTop={1}>
         <Text>
+          {/* I18N-STRINGS-START */}
           {theme.muted(
-            `Currently granted: ${granted.size === 0 ? '(none)' : [...granted].join(', ')}`,
+            t('permissions.granted', {
+              list:
+                granted.size === 0
+                  ? t('permissions.granted.none')
+                  : [...granted].join(', '),
+            }),
           )}
+          {/* I18N-STRINGS-END */}
         </Text>
       </Box>
     </Box>

@@ -130,6 +130,52 @@ export function resolvePricing(modelId: string): ModelPricing | null {
   return best;
 }
 
+// COST-FORECAST-PRICING-SECTION (start)
+//
+// Provider+model aware wrapper used by the next-turn cost estimator
+// (`src/llm/cost-estimator.ts`). Source: Anthropic pricing page
+// (https://www.anthropic.com/pricing#api), OpenAI pricing page
+// (https://openai.com/api/pricing/), and Google AI pricing
+// (https://ai.google.dev/pricing) as of 2026-05-27. Local providers
+// (Ollama, LM Studio) always resolve to `{ 0, 0, 0, 0 }` so the
+// estimator can short-circuit. Cloud providers fall through to the
+// existing `resolvePricing` shared static table — this wrapper does
+// NOT duplicate that table, it just normalises the provider→{free,
+// known, unknown} lookup contract.
+
+/**
+ * Provider-aware pricing lookup. Used by the next-turn cost estimator.
+ *
+ * Behaviour:
+ *   - Local providers (`ollama`, `lmstudio`) → all-zero pricing so the
+ *     forecast chip can be hidden / skipped at the call site.
+ *   - Cloud providers → delegate to `resolvePricing(model)` which uses
+ *     the curated table at the top of this file (Anthropic / OpenAI /
+ *     Google / DeepSeek / Qwen / OpenRouter prefixes).
+ *   - Unknown model → `null` so the UI can render "?" / muted style.
+ *
+ * The `provider` argument intentionally accepts the loose string type
+ * to mirror `Backend` without an import cycle through `@/types/global`.
+ */
+export function getPricing(
+  provider: string,
+  model: string,
+): ModelPricing | null {
+  if (typeof model !== 'string' || model.length === 0) return null;
+  // Local providers — fixed zero cost, never null (`null` means
+  // "unknown"; local cost is known to be free).
+  if (provider === 'ollama' || provider === 'lmstudio') {
+    return { inputPer1M: 0, outputPer1M: 0, cachedInputPer1M: 0 };
+  }
+  // OpenRouter / Anthropic / OpenAI / Google / custom — delegate to
+  // the static table. (OpenRouter's dynamic catalog is consulted at
+  // the `resolvePrice` level used by SessionManager; the forecast chip
+  // stays on the cheap static path so it doesn't fire a network call
+  // every keystroke.)
+  return resolvePricing(model);
+}
+// COST-FORECAST-PRICING-SECTION (end)
+
 /**
  * Compute the USD cost for a given (model, tokensIn, tokensOut, cachedIn?) tuple.
  *

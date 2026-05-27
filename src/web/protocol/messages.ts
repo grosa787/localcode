@@ -204,6 +204,25 @@ export type WSClientMessage =
     }
   | { type: 'browser_user_scroll'; sessionId: string; deltaY: number }
   | { type: 'browser_close_panel'; sessionId: string }
+  // PRESENCE-SECTION
+  /**
+   * Multi-user collaboration presence. A client emits this to announce
+   * that it is currently typing (or stopped) in a session. The server
+   * fans out to every OTHER subscriber for the session — never echoed to
+   * the sender. `userId` is the stable per-tab identity from localStorage;
+   * `displayName` is user-editable. `lastSeenMs` is `Date.now()` from the
+   * client; the server overwrites with its own clock before fan-out so
+   * peers cannot lie about freshness.
+   */
+  | {
+      type: 'presence';
+      sessionId: string;
+      userId: string;
+      displayName: string;
+      typing: boolean;
+      lastSeenMs: number;
+    }
+  // PRESENCE-SECTION-END
   // AGENT-LIFECYCLE-SECTION
   // Relay a user message to a specific sub-agent under the named
   // parent session. Server posts the envelope onto the
@@ -439,6 +458,24 @@ export type WSServerMessage =
       version: string;
     }
   // UPDATE-MODAL-WS-SECTION-END
+  // PRESENCE-SECTION
+  /**
+   * Multi-user collaboration: a peer's typing/presence state. Echoed by
+   * the server to every OTHER subscriber for the session — never to the
+   * sender. UI uses `lastSeenMs` to age out stale peers (default 30 s
+   * for the "connected" set; the server reaps internal entries after
+   * 60 s). `typing=false` is also sent on disconnect so peers see them
+   * leave gracefully.
+   */
+  | {
+      type: 'presence';
+      sessionId: string;
+      userId: string;
+      displayName: string;
+      typing: boolean;
+      lastSeenMs: number;
+    }
+  // PRESENCE-SECTION-END
   | { type: 'pong' };
 
 // ---------- Zod schemas (runtime validation) ----------
@@ -554,6 +591,16 @@ export const WSClientMessageSchema: z.ZodType<WSClientMessage> = z.union([
     type: z.literal('browser_close_panel'),
     sessionId: z.string(),
   }),
+  // PRESENCE-SECTION
+  z.object({
+    type: z.literal('presence'),
+    sessionId: z.string(),
+    userId: z.string(),
+    displayName: z.string(),
+    typing: z.boolean(),
+    lastSeenMs: z.number(),
+  }),
+  // PRESENCE-SECTION-END
   // AGENT-LIFECYCLE-SECTION
   z.object({
     type: z.literal('relay_to_agent'),
@@ -777,6 +824,16 @@ export const WSServerMessageSchema: z.ZodType<WSServerMessage> = z.union([
     version: z.string(),
   }),
   // UPDATE-MODAL-WS-SECTION-END
+  // PRESENCE-SECTION
+  z.object({
+    type: z.literal('presence'),
+    sessionId: z.string(),
+    userId: z.string(),
+    displayName: z.string(),
+    typing: z.boolean(),
+    lastSeenMs: z.number(),
+  }),
+  // PRESENCE-SECTION-END
 ]);
 
 // Schemas for the wire-only sub-shapes. Exported so REST handlers and

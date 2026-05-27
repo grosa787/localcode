@@ -1267,6 +1267,11 @@ export function applyRecentWindow(
   if (messages.length <= cap + 2) return messages.slice();
 
   // ---- Identify pinned indices (system + compressed-context summary).
+  // COMPRESS-STRATEGY-SECTION — the new strategy-aware compressor in
+  // `cmd-compress.ts` emits an `[auto-compressed summary]` marker for
+  // its summarise + truncate paths (the dedup path leaves the array
+  // shape unchanged so no new marker fires). Pin both prefixes so the
+  // sliding-window slicer below preserves them on every turn.
   const pinnedIdx = new Set<number>();
   for (let i = 0; i < messages.length; i += 1) {
     const m = messages[i];
@@ -1276,10 +1281,14 @@ export function applyRecentWindow(
       continue;
     }
     const content = typeof m.content === 'string' ? m.content : '';
-    if (content.startsWith('[Compressed context]')) {
+    if (
+      content.startsWith('[Compressed context]') ||
+      content.startsWith('[auto-compressed summary]')
+    ) {
       pinnedIdx.add(i);
     }
   }
+  // COMPRESS-STRATEGY-SECTION-END
 
   // ---- Find non-pinned `user`-message indices. Each is the start
   // of a round. The list is in ascending order.

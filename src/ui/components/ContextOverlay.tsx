@@ -14,6 +14,9 @@
 import React, { useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { noxPalette, textMuted, ctxColor } from '../theme.js';
+// I18N-STRINGS-START
+import { useT } from '../../i18n/index.js';
+// I18N-STRINGS-END
 
 export interface ContextOverlayProps {
   readonly contextPercent: number;
@@ -53,6 +56,9 @@ function ContextOverlay({
   localcodeMd,
   onClose,
 }: ContextOverlayProps): React.JSX.Element {
+  // I18N-STRINGS-START
+  const { t } = useT();
+  // I18N-STRINGS-END
   useInput(
     useCallback(
       (_input: string, key: { escape?: boolean; return?: boolean }) => {
@@ -75,14 +81,18 @@ function ContextOverlay({
       paddingY={1}
     >
       <Box>
+        {/* I18N-STRINGS-START */}
         <Text color={noxPalette.white} bold>
-          Context
+          {t('context.title')}
         </Text>
+        {/* I18N-STRINGS-END */}
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
         <Box flexDirection="row">
-          <Text color={textMuted}>Tokens:  </Text>
+          {/* I18N-STRINGS-START */}
+          <Text color={textMuted}>{t('context.label.tokens')}  </Text>
+          {/* I18N-STRINGS-END */}
           <Text color={noxPalette.white}>{formatTokens(totalTokens)}</Text>
           <Text color={textMuted}> / </Text>
           <Text color={noxPalette.white}>{formatTokens(maxTokens)}</Text>
@@ -93,29 +103,41 @@ function ContextOverlay({
         </Box>
 
         <Box flexDirection="row" marginTop={1}>
-          <Text color={textMuted}>Messages: </Text>
+          {/* I18N-STRINGS-START */}
+          <Text color={textMuted}>{t('context.label.messages')} </Text>
+          {/* I18N-STRINGS-END */}
           <Text color={noxPalette.white}>{String(messageCount)}</Text>
         </Box>
 
         <Box flexDirection="row" marginTop={1}>
-          <Text color={textMuted}>Skills ({activeSkills.length}): </Text>
+          {/* I18N-STRINGS-START */}
+          <Text color={textMuted}>
+            {t('context.label.skills', { n: activeSkills.length })}{' '}
+          </Text>
           {activeSkills.length === 0 ? (
-            <Text color={textMuted}>(none active)</Text>
+            <Text color={textMuted}>{t('context.label.skills.none')}</Text>
           ) : (
             <Text color={noxPalette.light}>{activeSkills.join(', ')}</Text>
           )}
+          {/* I18N-STRINGS-END */}
         </Box>
 
         <Box flexDirection="row" marginTop={1}>
-          <Text color={textMuted}>LOCALCODE.md: </Text>
+          {/* I18N-STRINGS-START */}
+          <Text color={textMuted}>{t('context.label.localcodeMd')} </Text>
           <Text color={localcodeMd ? noxPalette.light : textMuted}>
-            {localcodeMd ? 'present (injected)' : 'absent'}
+            {localcodeMd
+              ? t('context.localcodeMd.present')
+              : t('context.localcodeMd.absent')}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
       </Box>
 
       <Box marginTop={1}>
-        <Text color={textMuted}>(esc / enter) close</Text>
+        {/* I18N-STRINGS-START */}
+        <Text color={textMuted}>{t('context.footer')}</Text>
+        {/* I18N-STRINGS-END */}
       </Box>
     </Box>
   );

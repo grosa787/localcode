@@ -84,6 +84,9 @@ import SplashScreen from '@/ui/screens/SplashScreen';
 // completes (gated by `config.firstRun?.tutorialShown`). Re-invokable
 // on demand via the `/tutorial` slash command.
 import TutorialOverlay from '@/ui/overlays/TutorialOverlay';
+// PLAN-MODE-OVERLAY-SECTION (import)
+import { PlanModeBanner } from '@/ui/overlays/PlanModeOverlay';
+// PLAN-MODE-OVERLAY-SECTION (import end)
 // TUTORIAL-MOUNT-SECTION-END
 // LANGUAGE-PICKER-MOUNT-SECTION — first-launch language picker.
 import LanguagePicker from '@/ui/screens/LanguagePicker';
@@ -130,11 +133,71 @@ import {
 import { SessionManager, titleFromFirstMessage } from '@/sessions/session-manager';
 import type { Todo } from '@/sessions/session-manager';
 import { resetDefaultDb } from '@/sessions/db';
+// JOURNAL-RECOVERY-SECTION (imports)
+import {
+  JournalWriter,
+  archiveJournal,
+  pruneArchivedJournals,
+  recoverableJournals,
+  type RecoverableJournal,
+} from '@/sessions/journal';
+// JOURNAL-RECOVERY-SECTION (imports end)
+// SANDBOX-WIRING-SECTION (imports)
+import type { SandboxRuntimeConfig } from '@/tools/sandbox/types';
+// SANDBOX-WIRING-SECTION (imports end)
+// COST-WIRING-SECTION (imports) — Wave 9D next-turn cost forecast.
+import {
+  DEFAULT_RECENT_OUTPUT,
+  estimateNextTurn,
+} from '@/llm/cost-estimator';
+// COST-WIRING-SECTION (imports end)
 // UNDO-SECTION
 import { getProcessFileSnapshotStack } from '@/sessions/file-snapshot-stack';
 // UNDO-SECTION-END
 
 import { SkillsManager } from '@/skills/skills-manager';
+// SKILL-SUGGEST-SECTION (imports)
+// Auto-suggest skills based on the current user input. The suggester is
+// pure / synchronous; the toast component is render-only. Wiring +
+// dismissal timer + Tab/Esc handling live in this composition root.
+import {
+  suggestSkillsForInput,
+  type SkillSuggestion,
+} from '@/skills/auto-suggest';
+import SkillSuggestionToast from '@/ui/components/SkillSuggestionToast';
+// SKILL-SUGGEST-SECTION (imports end)
+// MARKETPLACE-WIRING-SECTION (imports) — `/skills browse` + `/mcp browse`.
+// Marketplace overlay + catalog fetchers + installers. The overlay
+// renders the entries hand-off from cmd-marketplace's `openMarketplace`
+// callback and handles its own keystroke loop.
+import MarketplaceOverlay, {
+  type MarketplaceEntry,
+} from '@/ui/overlays/MarketplaceOverlay';
+import {
+  fetchSkillCatalog,
+  installSkill,
+} from '@/marketplace/skills-fetcher';
+import {
+  fetchMcpCatalog,
+  installMcpServer,
+} from '@/marketplace/mcp-fetcher';
+import type {
+  MarketplaceFetchResult,
+  MarketplaceMcpServer,
+  MarketplaceSkill,
+} from '@/marketplace/types';
+// MARKETPLACE-WIRING-SECTION (imports end)
+// METRICS-WIRE-SECTION (imports) — `/metrics` overlay (local-only).
+import MetricsOverlay from '@/ui/overlays/MetricsOverlay';
+import { snapshot as snapshotMetrics } from '@/telemetry/aggregator';
+import type { MetricsSnapshot } from '@/telemetry/types';
+// METRICS-WIRE-SECTION (imports end)
+// IMPORT-CMD-SECTION (imports) — `/import claude-code` slash command +
+// the first-run prompt that surfaces when we detect ~/.claude/projects/
+// without any LocalCode sessions yet.
+import { createImportCommand } from '@/commands/cmd-import';
+import { scanClaudeCode } from '@/migration/from-claude-code';
+// IMPORT-CMD-SECTION (imports end)
 
 import { MemoryStore, type MemoryEntry } from '@/memory';
 import { renderMemorySection } from '@/llm/memory-prompt';
@@ -203,6 +266,13 @@ import {
   // UPDATE-CMD-SECTION — `/update` slash command (auto-updater wrapper).
   createUpdateCommand,
   // UPDATE-CMD-SECTION-END
+  // METRICS-WIRE-SECTION — `/metrics` factory (Wave 10E).
+  createMetricsCommand,
+  // METRICS-WIRE-SECTION-END
+  // MARKETPLACE-WIRING-SECTION — `/skills browse` + `/mcp browse`.
+  createSkillsBrowseCommand,
+  createMcpBrowseCommand,
+  // MARKETPLACE-WIRING-SECTION-END
   registerBuiltinCommands,
 } from '@/commands/index';
 // DEMO-TUTORIAL-CMD-SECTION — Player ctor for the in-session `/demo`.
@@ -325,6 +395,20 @@ import CommandPalette, {
 // gives the viewer its own keystroke pump independent of ChatScreen.
 import DiffViewer from '@/ui/overlays/DiffViewer';
 import type { DiffEntry } from '@/commands/cmd-diff';
+// BATCH-APPROVAL-SECTION (Wave 10D) — unified batch-approval modal
+// surfaced when the LLM emits ≥ permissions.batchApprovalThreshold
+// mutating tool calls in a single turn. Reviews all diffs at once
+// instead of firing N sequential approval prompts. State + mount
+// markers below; see BatchApprovalDialog component for the UX.
+import BatchApprovalDialog, {
+  type BatchApprovalDialogItem,
+} from '@/ui/components/BatchApprovalDialog';
+import type {
+  BatchApprovalCallback,
+  BatchApprovalDecision,
+  BatchApprovalItem,
+} from '@/types/message';
+// BATCH-APPROVAL-SECTION-END
 // BRANCHES-MOUNT-SECTION (imports)
 import { flattenBranchTree as flattenBranchTreeForPicker } from '@/ui/overlays/BranchPicker';
 // BRANCHES-MOUNT-SECTION (imports end)
@@ -746,6 +830,46 @@ function App(props: AppProps): React.JSX.Element {
   // Chat-screen state (messages / streaming / approvals / history / queue).
   const [chatState, chatDispatch] = useReducer(chatReducer, initialChatState);
 
+  // SKILL-SUGGEST-SECTION (state) — list of suggestion toasts surfaced
+  // above the chat input. Populated on every submit; cleared by Esc /
+  // Tab activation / 8s auto-dismiss timer.
+  const [skillSuggestions, setSkillSuggestions] = useState<
+    readonly SkillSuggestion[]
+  >([]);
+  // SKILL-SUGGEST-SECTION (state end)
+
+  // MARKETPLACE-WIRING-SECTION (state) — overlay payload for
+  // `/skills browse` and `/mcp browse`. `null` keeps the overlay closed.
+  type MarketplaceState =
+    | {
+        readonly mode: 'skills';
+        readonly result: MarketplaceFetchResult<MarketplaceSkill>;
+      }
+    | {
+        readonly mode: 'mcp';
+        readonly result: MarketplaceFetchResult<MarketplaceMcpServer>;
+      };
+  const [marketplaceState, setMarketplaceState] =
+    useState<MarketplaceState | null>(null);
+  const [marketplaceInfo, setMarketplaceInfo] = useState<string | null>(null);
+  const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
+  const [marketplaceLoading, setMarketplaceLoading] = useState<boolean>(false);
+  // MARKETPLACE-WIRING-SECTION (state end)
+
+  // METRICS-WIRE-SECTION (state) — opened by `/metrics`; null keeps the
+  // overlay closed. Refresh re-aggregates the snapshot in place.
+  const [metricsOverlayData, setMetricsOverlayData] =
+    useState<MetricsSnapshot | null>(null);
+  const [metricsRefreshing, setMetricsRefreshing] = useState<boolean>(false);
+  // METRICS-WIRE-SECTION (state end)
+
+  // IMPORT-FIRST-RUN-SECTION (state) — controls the one-time prompt
+  // shown on first launch when ~/.claude/projects/ exists with content
+  // and the user hasn't dismissed it yet (`migration.claudeCodeDismissed`).
+  const [importPromptOpen, setImportPromptOpen] = useState<boolean>(false);
+  const importPromptCheckedRef = useRef<boolean>(false);
+  // IMPORT-FIRST-RUN-SECTION (state end)
+
   // TOKEN-VISUALIZER-SAMPLES-SECTION (Wave 6A4) — ring buffer of the
   // last `TOKEN_SAMPLES_RING_SIZE` assistant turns + the matching cost
   // rows. Used by `/perf` (sparklines) and `/cost` (per-turn table).
@@ -803,6 +927,23 @@ function App(props: AppProps): React.JSX.Element {
   // ---------- Services ----------
   const configManager = useMemo(() => new ConfigManager(), []);
   const sessionManager = useMemo(() => new SessionManager(), []);
+
+  // JOURNAL-RECOVERY-SECTION (state)
+  // Per-session crash-resilient journal writer. One per active session;
+  // owned by this composition root so the lifecycle matches App's
+  // mount/unmount cleanly. The writer fires `message_committed` events
+  // via `SessionManager.attachJournal(sid, writer)` after each row
+  // lands, plus a terminal `session_end` on clean close so the recovery
+  // scan on next startup skips this session.
+  const journalWriterRef = useRef<JournalWriter | null>(null);
+  // Recovery prompt state. Populated once on mount from
+  // `recoverableJournals()`; non-empty list mounts the overlay above
+  // the rest of the chat tree. `null` (initial) → "scan not done yet";
+  // `[]` → "scan done, nothing to recover".
+  const [recoverableList, setRecoverableList] =
+    useState<readonly RecoverableJournal[] | null>(null);
+  const recoveryScanDoneRef = useRef<boolean>(false);
+  // JOURNAL-RECOVERY-SECTION (state end)
 
   // AGENT-PANEL-SECTION (Wave 5A — TA team)
   // -----------------------------------------------------------------
@@ -1206,6 +1347,21 @@ function App(props: AppProps): React.JSX.Element {
   // pass their flags through to the executor.
   const pendingResolverRef = useRef<((decision: ApprovalResolverArg) => void) | null>(null);
 
+  // BATCH-APPROVAL-SECTION
+  // Unified batch-approval modal state. Populated when `executeAll`
+  // gathers ≥ threshold mutating calls AND the user wired the
+  // `batchApprovalCallback` opt below. The dialog is rendered as a
+  // full-takeover overlay (see BATCH-APPROVAL mount block at the
+  // bottom of the render function); its `onConfirm` resolves the
+  // resolver ref with the per-item Map and clears state.
+  const [batchApproval, setBatchApproval] = useState<{
+    readonly items: readonly BatchApprovalDialogItem[];
+    readonly resolver: (
+      decisions: ReadonlyMap<string, BatchApprovalDecision>,
+    ) => void;
+  } | null>(null);
+  // BATCH-APPROVAL-SECTION-END
+
   // R16 (Agent 8) — refs to the latest preview-summariser callbacks.
   // Initialised to a no-op so the slash-command useEffect (which
   // registers BEFORE the helpers themselves are declared in the
@@ -1574,6 +1730,22 @@ function App(props: AppProps): React.JSX.Element {
       ontology: ontologyIndexer,
       // ONTOLOGY-WIRE-SECTION-END
     };
+    // SANDBOX-WIRING-SECTION — push the user's `[sandbox]` TOML
+    // preferences into the run_command tool ctx. When unset, the tool
+    // falls back to its built-in defaults (backend='auto',
+    // allowNetwork=true) so legacy hosts keep their pre-sandbox
+    // behaviour. Resolved via `configRef.current` (narrowed at runtime
+    // — the Zod-validated `sandbox` block is optional and not yet
+    // mirrored on the `.d.ts` AppConfig shape) so a live `/settings`
+    // edit picks up on the next tool call without rebuilding the
+    // executor.
+    const sandboxConfigForCtx = readSandboxConfig(configRef.current);
+    if (sandboxConfigForCtx !== undefined) {
+      (ctx as ToolContext & AgentToolContext & {
+        sandboxConfig?: SandboxRuntimeConfig;
+      }).sandboxConfig = sandboxConfigForCtx;
+    }
+    // SANDBOX-WIRING-SECTION-END
     const handlerMap = createToolHandlerMap(ctx);
 
     // Adapter to the shape ToolExecutor expects: (args) => Promise<ToolResult>.
@@ -1687,6 +1859,106 @@ function App(props: AppProps): React.JSX.Element {
           soundPlayer.play('approval');
         });
       },
+      // BATCH-APPROVAL-SECTION
+      // When ≥ threshold mutating tool calls land in a single turn,
+      // route them through the unified dialog instead of N sequential
+      // approval prompts. The callback receives every mutating item
+      // upfront, builds a `BatchApprovalDialogItem` row per call (with
+      // a friendly label + best-effort preview), mounts the dialog,
+      // and resolves with the user's per-item decisions. Below the
+      // threshold OR with no `permissions.batchApprovalThreshold`
+      // configured, the existing per-call approvalCallback above fires
+      // sequentially (legacy behaviour preserved).
+      batchApprovalThreshold:
+        config?.permissions?.batchApprovalThreshold ?? 3,
+      batchApprovalCallback: (async ({
+        items,
+      }: {
+        readonly items: readonly BatchApprovalItem[];
+      }): Promise<ReadonlyMap<string, BatchApprovalDecision>> => {
+        return new Promise((resolvePromise) => {
+          const dialogItems: BatchApprovalDialogItem[] = items.map((it) => {
+            const a = it.args;
+            const path =
+              typeof a['path'] === 'string' ? (a['path'] as string) : '';
+            const command =
+              typeof a['command'] === 'string'
+                ? (a['command'] as string)
+                : '';
+            const content =
+              typeof a['content'] === 'string'
+                ? (a['content'] as string)
+                : '';
+            const label =
+              path.length > 0
+                ? path
+                : command.length > 0
+                  ? command
+                  : '';
+            // Best-effort preview: write_file → first 30 lines of
+            // content; edit_file → find→replace summary; run_command
+            // → the command line; others → JSON.stringify(args).
+            let preview = '';
+            if (it.toolName === 'write_file' && content.length > 0) {
+              preview = content
+                .split(/\r?\n/)
+                .slice(0, 30)
+                .map((ln) => `+ ${ln}`)
+                .join('\n');
+            } else if (it.toolName === 'edit_file') {
+              const find =
+                typeof a['find_text'] === 'string'
+                  ? (a['find_text'] as string)
+                  : '';
+              const replace =
+                typeof a['replace_text'] === 'string'
+                  ? (a['replace_text'] as string)
+                  : '';
+              const findHead = find.split(/\r?\n/).slice(0, 10).join('\n');
+              const replaceHead = replace
+                .split(/\r?\n/)
+                .slice(0, 10)
+                .join('\n');
+              preview =
+                (findHead.length > 0
+                  ? findHead
+                      .split(/\r?\n/)
+                      .map((ln) => `- ${ln}`)
+                      .join('\n') + '\n'
+                  : '') +
+                (replaceHead.length > 0
+                  ? replaceHead
+                      .split(/\r?\n/)
+                      .map((ln) => `+ ${ln}`)
+                      .join('\n')
+                  : '');
+            } else if (it.toolName === 'run_command' && command.length > 0) {
+              preview = `$ ${command}`;
+            } else {
+              try {
+                preview = JSON.stringify(a, null, 2);
+              } catch {
+                preview = '';
+              }
+            }
+            return {
+              toolCallId: it.toolCallId,
+              toolName: it.toolName,
+              label,
+              previewOutput: preview,
+            };
+          });
+          setBatchApproval({
+            items: dialogItems,
+            resolver: (decisions) => {
+              setBatchApproval(null);
+              resolvePromise(decisions);
+            },
+          });
+          soundPlayer.play('approval');
+        });
+      }) satisfies BatchApprovalCallback,
+      // BATCH-APPROVAL-SECTION-END
     });
     // UNDO-SECTION
     // Wire the snapshot hook so each successful write_file / edit_file /
@@ -1889,6 +2161,32 @@ function App(props: AppProps): React.JSX.Element {
   }, []);
   // PRICING-REFRESH-SECTION-END
 
+  // JOURNAL-RECOVERY-SECTION (boot)
+  // Scan `~/.localcode/journal/` for recoverable sessions on first
+  // mount and prune anything in the archive older than 30 days so the
+  // folder stays bounded. Both calls are synchronous directory walks
+  // — no blocking work, no network. Skipped during onboarding /
+  // language-picker so the prompt cannot mask the first-launch flow.
+  useEffect(() => {
+    if (recoveryScanDoneRef.current) return;
+    if (screen === 'onboarding' || screen === 'languagePicker' || screen === 'splash') {
+      return;
+    }
+    recoveryScanDoneRef.current = true;
+    try {
+      pruneArchivedJournals();
+    } catch {
+      /* best-effort — pruning is a housekeeping nicety */
+    }
+    try {
+      const found = recoverableJournals();
+      setRecoverableList(found);
+    } catch {
+      setRecoverableList([]);
+    }
+  }, [screen]);
+  // JOURNAL-RECOVERY-SECTION (boot end)
+
   // ONTOLOGY-WIRE-SECTION — start the indexer on mount: load any
   // persisted snapshot, kick a first scan, arm the background re-index
   // loop, and wire a chokidar watcher (debounced 2s) so saved edits
@@ -2003,6 +2301,52 @@ function App(props: AppProps): React.JSX.Element {
     sessionManager,
     contextManager,
   ]);
+
+  // JOURNAL-RECOVERY-SECTION (writer wiring)
+  // Open a per-session JournalWriter as soon as a session id is
+  // assigned, and close it cleanly when the session changes (resume,
+  // /clear, branch hop) or the app unmounts. On clean close we emit a
+  // terminal `session_end` event so the next-launch recovery scan
+  // skips this session — without that marker the user would see a
+  // false-positive prompt for every previous run.
+  useEffect(() => {
+    if (sessionId === null || sessionId.length === 0) return;
+    let writer: JournalWriter;
+    try {
+      writer = new JournalWriter(sessionId);
+    } catch {
+      // Best-effort — if the journal dir is unwritable (e.g. ROFS),
+      // skip the recovery hook entirely rather than crash the TUI.
+      return;
+    }
+    journalWriterRef.current = writer;
+    try {
+      sessionManager.attachJournal(sessionId, writer);
+      writer.append({
+        ts: Date.now(),
+        type: 'session_start',
+        data: { sessionId, projectRoot },
+      });
+    } catch {
+      /* swallow — journaling is best-effort */
+    }
+    return (): void => {
+      try {
+        sessionManager.detachJournal(sessionId);
+      } catch {
+        /* swallow */
+      }
+      try {
+        writer.close('clean');
+      } catch {
+        /* swallow */
+      }
+      if (journalWriterRef.current === writer) {
+        journalWriterRef.current = null;
+      }
+    };
+  }, [sessionId, sessionManager, projectRoot]);
+  // JOURNAL-RECOVERY-SECTION (writer wiring end)
 
   // ---------- Project settings.json watcher (FIX #35) ----------
   /**
@@ -2430,6 +2774,13 @@ function App(props: AppProps): React.JSX.Element {
       llm,
       sessionManager,
       getSessionId: () => sessionIdRef.current,
+      // COMPRESS-STRATEGY-SECTION — wire the new strategy-aware
+      // compression path. `getBackend` lets the strategy selector pick
+      // between `dedup | summarize | truncate` based on the active
+      // provider; `contextManager.replaceAll` is the apply step. Both
+      // are no-ops via fallback when undefined.
+      getBackend: () => config?.backend?.type ?? null,
+      // COMPRESS-STRATEGY-SECTION-END
     });
     // Expose the execute closure so the auto-compress trigger in
     // `runStreamLoop` can dispatch a programmatic `/compress` without
@@ -2848,6 +3199,47 @@ function App(props: AppProps): React.JSX.Element {
     });
     // UPDATE-CMD-SECTION-END
 
+    // METRICS-WIRE-SECTION — `/metrics` slash command. Wires the
+    // process-wide aggregator + telemetry config gate. The command
+    // itself opens the `metrics` overlay via `ctx.showOverlay`; when
+    // the host dispatcher rejects the kind it falls back to text.
+    const metricsCmd = createMetricsCommand({});
+    // METRICS-WIRE-SECTION-END
+
+    // MARKETPLACE-WIRING-SECTION — `/skills browse` + `/mcp browse`.
+    // The factory takes a `fetchCatalog` and an `openMarketplace`
+    // callback; the latter pushes the fetched entries into the host
+    // overlay state above, which is rendered as a takeover overlay in
+    // the chat-screen case branch.
+    const skillsBrowseCmd = createSkillsBrowseCommand({
+      fetchCatalog: fetchSkillCatalog,
+      openMarketplace: (payload) => {
+        setMarketplaceError(null);
+        setMarketplaceInfo(null);
+        setMarketplaceLoading(false);
+        setMarketplaceState(payload);
+      },
+    });
+    const mcpBrowseCmd = createMcpBrowseCommand({
+      fetchCatalog: fetchMcpCatalog,
+      openMarketplace: (payload) => {
+        setMarketplaceError(null);
+        setMarketplaceInfo(null);
+        setMarketplaceLoading(false);
+        setMarketplaceState(payload);
+      },
+    });
+    // MARKETPLACE-WIRING-SECTION-END
+
+    // IMPORT-CMD-SECTION — `/import claude-code` slash command. The
+    // command opens an overlay through `ctx.showOverlay('import',
+    // { plan })` when the host dispatches it; we currently don't wire
+    // an interactive overlay (the cmd falls back to printing the plan
+    // into chat), so the user can also pass `all` to import everything
+    // in one shot.
+    const importCmd = createImportCommand({ sessionManager });
+    // IMPORT-CMD-SECTION-END
+
     registerBuiltinCommands(registry, {
       init: initCmd,
       model: modelCmd,
@@ -2921,7 +3313,20 @@ function App(props: AppProps): React.JSX.Element {
       // UPDATE-CMD-SECTION
       update: updateCmd,
       // UPDATE-CMD-SECTION-END
+      // METRICS-WIRE-SECTION
+      metrics: metricsCmd,
+      // METRICS-WIRE-SECTION-END
+      // MARKETPLACE-WIRING-SECTION
+      skillsBrowse: skillsBrowseCmd,
+      mcpBrowse: mcpBrowseCmd,
+      // MARKETPLACE-WIRING-SECTION-END
     });
+
+    // IMPORT-CMD-SECTION — `/import` is not in the BuiltinCommandFactories
+    // bag (the bag is curated). Register it directly on the registry so
+    // the user can invoke `/import claude-code` and `/import cc`.
+    registry.register(importCmd);
+    // IMPORT-CMD-SECTION-END
 
     // Extra built-ins added here (not in Agent 6 factories).
     const skillsScreenCmd: SlashCommand = {
@@ -3040,6 +3445,21 @@ function App(props: AppProps): React.JSX.Element {
         // ignore
       }
       // PROCESS-MONITOR-WIRE-SECTION-END
+      // JOURNAL-RECOVERY-SECTION (signal close)
+      // Close the active session journal cleanly so the next-launch
+      // recovery scan doesn't surface this run as unfinished. The
+      // React useEffect cleanup also tries to close, but a hard signal
+      // path may exit before React tears down — belt-and-braces here.
+      try {
+        const writer = journalWriterRef.current;
+        if (writer !== null) {
+          writer.close('clean');
+          journalWriterRef.current = null;
+        }
+      } catch {
+        // ignore
+      }
+      // JOURNAL-RECOVERY-SECTION (signal close end)
     };
 
     // R16 — fire the preview-summary persist with a 3 s race, then
@@ -3209,12 +3629,18 @@ function App(props: AppProps): React.JSX.Element {
       return;
     }
 
+    // PLAN-MODE-HOTKEY-SECTION
     // Ctrl+P — toggle Plan Mode. When the active profile is `plan`,
     // switch back to `default`; otherwise switch to `plan`. Ink doesn't
     // expose Cmd-Shift-* combinations through raw stdin so `Ctrl+P` is
     // the cross-platform-safe binding; documented in --help / README.
     // Persisted via ConfigManager so the executor's useMemo dep
     // (`config.permissions.profile`) picks the switch up.
+    //
+    // Toast copy comes from the i18n table (`plan.toast.on` /
+    // `plan.toast.off`) via the module-level `appT` so the keystroke
+    // handler — which is NOT a React component and therefore can't use
+    // the `useT()` hook — still picks up the user's locale.
     if (key.ctrl && input === 'p') {
       try {
         const cur = configManager.read();
@@ -3230,8 +3656,8 @@ function App(props: AppProps): React.JSX.Element {
         setChatLog((prev) => [
           ...prev,
           nextProfile === 'plan'
-            ? 'Plan Mode ON — edit + command tools blocked. Press Ctrl+P or run /profile default to exit.'
-            : 'Plan Mode OFF — back to default profile.',
+            ? appT('plan.toast.on')
+            : appT('plan.toast.off'),
         ]);
       } catch (cause) {
         const msg = cause instanceof Error ? cause.message : String(cause);
@@ -3239,6 +3665,46 @@ function App(props: AppProps): React.JSX.Element {
       }
       return;
     }
+    // PLAN-MODE-HOTKEY-SECTION-END
+
+    // SKILL-SUGGEST-SECTION (hotkeys) — Tab activates the first
+    // suggestion (matches the convention "use the visually-first item");
+    // Esc dismisses without activating. Both keys also clear the
+    // suggestion list so the toast goes away immediately. We only
+    // intercept when at least one suggestion is showing; otherwise the
+    // keys fall through to whoever else binds them.
+    if (skillSuggestions.length > 0) {
+      if (key.tab) {
+        const first = skillSuggestions[0];
+        if (first !== undefined) {
+          void (async (): Promise<void> => {
+            try {
+              await skillsManager.toggle(first.skillId);
+              const next = await skillsManager.list();
+              setSkills(next);
+              setChatLog((prev) => [
+                ...prev,
+                `Activated skill: ${first.skillName}`,
+              ]);
+            } catch (cause) {
+              const msg =
+                cause instanceof Error ? cause.message : String(cause);
+              setChatLog((prev) => [
+                ...prev,
+                `Failed to activate skill ${first.skillId}: ${msg}`,
+              ]);
+            }
+          })();
+        }
+        setSkillSuggestions([]);
+        return;
+      }
+      if (key.escape) {
+        setSkillSuggestions([]);
+        return;
+      }
+    }
+    // SKILL-SUGGEST-SECTION (hotkeys end)
   });
 
   // R7 (FIX #8) — when the exit-confirm window opens, schedule a timer
@@ -3251,6 +3717,57 @@ function App(props: AppProps): React.JSX.Element {
     }, EXIT_CONFIRM_WINDOW_MS);
     return () => clearTimeout(handle);
   }, [chatState.confirmExitAt]);
+
+  // SKILL-SUGGEST-SECTION (timer) — 8s auto-dismiss for the skill
+  // suggestion toast. Resets on every change to `skillSuggestions`, so
+  // a fresh submit that produces a new suggestion gives the user a
+  // full 8s window before it disappears.
+  useEffect(() => {
+    if (skillSuggestions.length === 0) return undefined;
+    const handle = setTimeout(() => {
+      setSkillSuggestions([]);
+    }, 8000);
+    return () => clearTimeout(handle);
+  }, [skillSuggestions]);
+  // SKILL-SUGGEST-SECTION (timer end)
+
+  // IMPORT-FIRST-RUN-SECTION (effect)
+  // On first chat-screen mount, detect:
+  //   1. zero LocalCode sessions in the SQLite store,
+  //   2. populated ~/.claude/projects/ on disk,
+  //   3. user hasn't dismissed the prompt before.
+  // If all three hold, open the first-run import prompt. The dismissal
+  // flag is persisted via ConfigManager so subsequent launches don't
+  // re-prompt. Guarded by a ref so we only run the detection once per
+  // <App> mount, never on re-renders.
+  useEffect(() => {
+    if (importPromptCheckedRef.current) return;
+    if (screen !== 'chat') return;
+    if (config === null) return;
+    importPromptCheckedRef.current = true;
+    const cfgMig = (config as unknown as {
+      migration?: { claudeCodeDismissed?: boolean };
+    }).migration;
+    if (cfgMig?.claudeCodeDismissed === true) return;
+    void (async (): Promise<void> => {
+      try {
+        // Cheap: count = SELECT count(*) FROM sessions (one row).
+        let count = 0;
+        try {
+          count = sessionManager.listSessions(1).length;
+        } catch {
+          return; // SQLite unreadable — skip silently
+        }
+        if (count > 0) return;
+        const plan = await scanClaudeCode();
+        if (plan.totalSessions === 0) return;
+        setImportPromptOpen(true);
+      } catch {
+        // Detection is best-effort; never block first-launch.
+      }
+    })();
+  }, [screen, config, sessionManager]);
+  // IMPORT-FIRST-RUN-SECTION (effect end)
 
   // ---------- Helpers that depend on state ----------
   const appendLog = useCallback((line: string): void => {
@@ -4464,6 +4981,26 @@ function App(props: AppProps): React.JSX.Element {
       // History-push for every submitted text (ChatScreen ↑/↓ walks it).
       chatDispatch({ type: 'PUSH_HISTORY', text });
 
+      // SKILL-SUGGEST-SECTION (submit) — auto-suggest non-active skills
+      // whose `triggers` regexes match the user's input. Best-effort:
+      // any throw inside the suggester (bad regex etc) is swallowed —
+      // the suggester itself returns `[]` rather than throwing, but we
+      // wrap defensively. The toast is purely advisory; we never block
+      // the submit waiting for the suggester.
+      try {
+        const allSkills = skills;
+        const activeIds = new Set<string>();
+        for (const s of allSkills) {
+          if (s.active) activeIds.add(s.id);
+        }
+        const suggestions = suggestSkillsForInput(text, allSkills, activeIds);
+        setSkillSuggestions(suggestions);
+      } catch {
+        // Never block submit on suggester failure.
+        setSkillSuggestions([]);
+      }
+      // SKILL-SUGGEST-SECTION (submit end)
+
       // APPROVAL-BATCH-SECTION
       // Reset turn-scoped batch approvals on every new user message —
       // the `[A]` button only lasts for the turn that approved it.
@@ -4563,6 +5100,9 @@ function App(props: AppProps): React.JSX.Element {
       chatState.currentConversant,
       preprocessUserMessage,
       getAgentOrchestrator,
+      // SKILL-SUGGEST-SECTION (deps)
+      skills,
+      // SKILL-SUGGEST-SECTION (deps end)
     ],
   );
 
@@ -4821,6 +5361,34 @@ function App(props: AppProps): React.JSX.Element {
             setScreen('modelSelect');
             return;
           }
+          // METRICS-WIRE-SECTION — `/metrics` dispatches `kind: 'metrics'`.
+          // We aggregate the snapshot in the host (so the overlay stays
+          // presentational) and set `metricsOverlayData` non-null to
+          // trigger the takeover overlay branch in the chat-screen
+          // render path below.
+          if (kind === 'metrics') {
+            setMetricsRefreshing(true);
+            void (async (): Promise<void> => {
+              try {
+                const cfgTele = (config as unknown as {
+                  telemetry?: { enabled?: boolean; retentionDays?: number };
+                }).telemetry;
+                const snap = await snapshotMetrics({
+                  enabled: cfgTele?.enabled === true,
+                  windowDays: cfgTele?.retentionDays ?? 30,
+                });
+                setMetricsOverlayData(snap);
+              } catch (cause) {
+                const msg =
+                  cause instanceof Error ? cause.message : String(cause);
+                appendLog(`/metrics failed: ${msg}`);
+              } finally {
+                setMetricsRefreshing(false);
+              }
+            })();
+            return;
+          }
+          // METRICS-WIRE-SECTION-END
           chatDispatch({ type: 'SHOW_OVERLAY', kind, data });
         },
       };
@@ -5873,6 +6441,115 @@ function App(props: AppProps): React.JSX.Element {
     };
   }, [config?.backend.type, config?.backend.apiKey]);
 
+  // COST-WIRING-SECTION (start) — Wave 9D next-turn cost forecast +
+  // cumulative session/today totals. Both branches are kept cheap so
+  // every render can recompute:
+  //
+  //   - `nextTurnEstimate` runs `estimateNextTurn(...)` against the
+  //     current ContextManager token total + the last assistant turn's
+  //     cached-token count. Unknown models surface as `unknown: true`
+  //     so the chip renders `~?` instead of a misleading number.
+  //
+  //   - `sessionCostUsd` / `todayCostUsd` query the read-replica via
+  //     `SessionManager.getSessionCost(sid)` + `getTodayCost()`. The
+  //     queries are single-row SUM() aggregates against a covering
+  //     index — well under 1ms even on a many-session DB. They are
+  //     memoised on the chat-state turn boundary (sessionId +
+  //     messages.length + outgoing turn counter) so they refire when
+  //     a new turn lands, not on every reducer mutation.
+  //
+  // When the wiring to UsageFooter is added in ChatScreen/MessageBlock
+  // (currently out of scope for this composition root because the
+  // cumulative totals are not yet exposed on ChatScreenProps), the
+  // values below are ready to be threaded through.
+
+  // Average completion-token count over the last 10 assistant turns.
+  // Falls back to the estimator's default when too few priced turns
+  // have landed in the session yet.
+  const recentOutputAvg = useMemo<number>(() => {
+    let total = 0;
+    let counted = 0;
+    for (let i = chatState.messages.length - 1; i >= 0 && counted < 10; i -= 1) {
+      const m = chatState.messages[i];
+      if (m === undefined) continue;
+      if (m.role !== 'assistant') continue;
+      const out = m.tokensOutput;
+      if (typeof out === 'number' && Number.isFinite(out) && out > 0) {
+        total += out;
+        counted += 1;
+      }
+    }
+    if (counted === 0) return DEFAULT_RECENT_OUTPUT;
+    return Math.max(1, Math.round(total / counted));
+  }, [chatState.messages]);
+
+  // Last assistant turn's cached-input token count — feeds the
+  // cache-rate portion of the forecast. Defaults to 0 when no prior
+  // turn carried cache telemetry (local providers, fresh sessions).
+  const lastCachedInputTokens = useMemo<number>(() => {
+    for (let i = chatState.messages.length - 1; i >= 0; i -= 1) {
+      const m = chatState.messages[i];
+      if (m === undefined) continue;
+      if (m.role !== 'assistant') continue;
+      const cached = m.cachedInputTokens;
+      if (typeof cached === 'number' && Number.isFinite(cached) && cached >= 0) {
+        return cached;
+      }
+      // First assistant turn from the tail without cache info → 0.
+      return 0;
+    }
+    return 0;
+  }, [chatState.messages]);
+
+  const nextTurnEstimate = useMemo(() => {
+    if (config === null) return { estimated: 0, unknown: true } as const;
+    const ctxTokens = contextManager.getTokenCount();
+    return estimateNextTurn({
+      contextTokens: ctxTokens,
+      cacheTokens: lastCachedInputTokens,
+      currentModel: modelOverride ?? config.model.current,
+      provider: config.backend.type,
+      recentOutputAvg,
+    });
+  }, [
+    config,
+    contextManager,
+    lastCachedInputTokens,
+    modelOverride,
+    recentOutputAvg,
+    // Re-key on message length so a freshly-landed turn updates the
+    // forecast immediately (token count is read at the call site, but
+    // the memo identity must change).
+    chatState.messages.length,
+  ]);
+
+  // Cumulative spend — refreshed on session-id change AND on every
+  // assistant turn landing in the message ring. Wrapped in useMemo so
+  // the SQL aggregates only run when something interesting happened.
+  const sessionCostUsd = useMemo<number>(() => {
+    if (sessionId === null || sessionId.length === 0) return 0;
+    try {
+      return sessionManager.getSessionCost(sessionId);
+    } catch {
+      return 0;
+    }
+    // The reducer's message length only ticks once per committed turn,
+    // so this is effectively a per-turn refresh.
+  }, [sessionId, sessionManager, chatState.messages.length]);
+
+  const todayCostUsd = useMemo<number>(() => {
+    try {
+      return sessionManager.getTodayCost();
+    } catch {
+      return 0;
+    }
+  }, [sessionManager, chatState.messages.length]);
+
+  // COST-FOOTER-PROPS-SECTION — the void shim previously parked here
+  // is no longer needed; both values are now plumbed through to
+  // ChatScreen → MessageRow → MessageBlock → UsageFooter.
+  // COST-WIRING-SECTION (end)
+
   // ---------- Render ----------
 
   // LOCALE-APPLY-WIRE-SECTION — propagate the active locale into the
@@ -5995,6 +6672,68 @@ function App(props: AppProps): React.JSX.Element {
         ...syntheticMessages,
         ...chatState.messages,
       ];
+      // JOURNAL-RECOVERY-SECTION (ui)
+      // Surface the unfinished-session prompt as a full-takeover
+      // overlay above every other chat overlay. Resolves once the
+      // user picks R / A / Esc — setting `recoverableList` to `[]`
+      // dismisses the overlay for this app run.
+      if (recoverableList !== null && recoverableList.length > 0) {
+        return renderTree(
+          <Box flexDirection="column">
+            <InputDispatcherProvider mode="overlay">
+              <DiffViewerInputPump />
+              <JournalRecoveryOverlay
+                recoverable={recoverableList}
+                locale={activeLocale}
+                onResume={(sid) => {
+                  void (async () => {
+                    try {
+                      await summariseAndPersistOutgoing();
+                      const target = sessionManager.getSession(sid);
+                      if (target !== null) {
+                        const rows = sessionManager.getAllMessages(sid);
+                        contextManager.replaceAll(rows);
+                        contextManager.resetUsage();
+                        chatDispatch({ type: 'REPLACE_MESSAGES', messages: rows });
+                        chatDispatch({ type: 'SET_SESSION_TOTAL_OUT', tokens: 0 });
+                        setSessionId(sid);
+                        setCurrentSession(target);
+                      } else {
+                        appendLog(
+                          `Unfinished session ${sid.slice(0, 8)} no longer exists.`,
+                        );
+                      }
+                    } catch (err) {
+                      const msg = err instanceof Error ? err.message : String(err);
+                      appendLog(`Failed to resume unfinished session: ${msg}`);
+                    } finally {
+                      setRecoverableList([]);
+                    }
+                  })();
+                }}
+                onArchiveAll={() => {
+                  let archived = 0;
+                  for (const r of recoverableList) {
+                    try {
+                      if (archiveJournal(r.sessionId)) archived += 1;
+                    } catch {
+                      /* swallow — archive is best-effort */
+                    }
+                  }
+                  if (archived > 0) {
+                    appendLog(appT('journal.recovery.archived', undefined, activeLocale));
+                  }
+                  setRecoverableList([]);
+                }}
+                onDismiss={() => {
+                  setRecoverableList([]);
+                }}
+              />
+            </InputDispatcherProvider>
+          </Box>
+        );
+      }
+      // JOURNAL-RECOVERY-SECTION (ui end)
       // TUTORIAL-MOUNT-SECTION — render the first-run walkthrough as a
       // full-takeover overlay above the chat tree. Mirrors the
       // CommandPalette pattern (its own InputDispatcherProvider so the
@@ -6038,6 +6777,44 @@ function App(props: AppProps): React.JSX.Element {
         );
       }
       // CMD-PALETTE-MOUNT-SECTION-END
+
+      // BATCH-APPROVAL-SECTION (Wave 10D)
+      // -----------------------------------------------------------
+      // Unified batch-approval modal fired when the LLM emits ≥
+      // permissions.batchApprovalThreshold mutating tool calls in
+      // one turn (multi-file refactor). Owns input fully via
+      // mode='approval' (same dispatcher slot ApprovalPrompt /
+      // DiffView use — the LIFO subscription guarantees the dialog's
+      // handler wins). `onConfirm` resolves the awaiting executor
+      // promise with per-item decisions; `onCancel` (Esc) resolves
+      // with every item rejected.
+      if (batchApproval !== null) {
+        const captured = batchApproval;
+        return renderTree(
+          <Box flexDirection="column">
+            <InputDispatcherProvider mode="approval">
+              <DiffViewerInputPump />
+              <BatchApprovalDialog
+                items={captured.items}
+                onConfirm={(decisions) => {
+                  captured.resolver(decisions);
+                }}
+                onCancel={() => {
+                  const empty = new Map<
+                    string,
+                    'approved' | 'rejected'
+                  >();
+                  for (const it of captured.items) {
+                    empty.set(it.toolCallId, 'rejected');
+                  }
+                  captured.resolver(empty);
+                }}
+              />
+            </InputDispatcherProvider>
+          </Box>,
+        );
+      }
+      // BATCH-APPROVAL-SECTION-END
 
       // DIFF-VIEWER-MOUNT-SECTION (Wave 5B / TF4)
       // -----------------------------------------------------------
@@ -6188,70 +6965,315 @@ function App(props: AppProps): React.JSX.Element {
           </Box>
         );
       }
+      // MARKETPLACE-WIRING-SECTION (render) — full-screen marketplace
+      // overlay opened by `/skills browse` / `/mcp browse`. Mounts above
+      // the chat frame and owns its own keystroke loop.
+      if (marketplaceState !== null) {
+        const entries: ReadonlyArray<MarketplaceEntry> =
+          marketplaceState.result.entries;
+        const onRefresh = (): void => {
+          setMarketplaceLoading(true);
+          setMarketplaceError(null);
+          setMarketplaceInfo(null);
+          void (async (): Promise<void> => {
+            try {
+              if (marketplaceState.mode === 'skills') {
+                const result = await fetchSkillCatalog({ force: true });
+                setMarketplaceState({ mode: 'skills', result });
+              } else {
+                const result = await fetchMcpCatalog({ force: true });
+                setMarketplaceState({ mode: 'mcp', result });
+              }
+            } catch (cause) {
+              const msg =
+                cause instanceof Error ? cause.message : String(cause);
+              setMarketplaceError(msg);
+            } finally {
+              setMarketplaceLoading(false);
+            }
+          })();
+        };
+        const onInstallGlobal = (entry: MarketplaceEntry): void => {
+          setMarketplaceInfo(null);
+          setMarketplaceError(null);
+          void (async (): Promise<void> => {
+            try {
+              if (marketplaceState.mode === 'skills') {
+                const out = await installSkill(
+                  entry as MarketplaceSkill,
+                  'global',
+                );
+                setMarketplaceInfo(`Installed to ${out.installedAt}`);
+              } else {
+                const out = await installMcpServer(
+                  entry as MarketplaceMcpServer,
+                );
+                setMarketplaceInfo(`Installed MCP server: ${out.installedAs}`);
+              }
+            } catch (cause) {
+              const msg =
+                cause instanceof Error ? cause.message : String(cause);
+              setMarketplaceError(msg);
+            }
+          })();
+        };
+        const onInstallProject =
+          marketplaceState.mode === 'skills'
+            ? (entry: MarketplaceEntry): void => {
+                setMarketplaceInfo(null);
+                setMarketplaceError(null);
+                void (async (): Promise<void> => {
+                  try {
+                    const out = await installSkill(
+                      entry as MarketplaceSkill,
+                      'project',
+                      { projectRoot },
+                    );
+                    setMarketplaceInfo(`Installed to ${out.installedAt}`);
+                  } catch (cause) {
+                    const msg =
+                      cause instanceof Error ? cause.message : String(cause);
+                    setMarketplaceError(msg);
+                  }
+                })();
+              }
+            : undefined;
+        return renderTree(
+          <Box flexDirection="column">
+            <MarketplaceOverlay
+              mode={marketplaceState.mode}
+              entries={entries}
+              loading={marketplaceLoading}
+              error={marketplaceError}
+              info={marketplaceInfo}
+              cacheAgeMs={marketplaceState.result.ageMs}
+              stale={marketplaceState.result.stale}
+              rateLimited={marketplaceState.result.rateLimited}
+              onInstallGlobal={onInstallGlobal}
+              {...(onInstallProject !== undefined
+                ? { onInstallProject }
+                : {})}
+              onRefresh={onRefresh}
+              onClose={() => {
+                setMarketplaceState(null);
+                setMarketplaceInfo(null);
+                setMarketplaceError(null);
+              }}
+            />
+          </Box>,
+        );
+      }
+      // MARKETPLACE-WIRING-SECTION (render end)
+
+      // IMPORT-FIRST-RUN-SECTION (render) — one-line top banner with
+      // three actions (Yes / Not now / Never ask). Renders above the
+      // ChatScreen so the user sees it on first boot. Persists the
+      // dismissal flag via ConfigManager.
+      if (importPromptOpen) {
+        const persistDismissal = (): void => {
+          try {
+            const updated = configManager.update({
+              migration: { claudeCodeDismissed: true },
+            });
+            setConfig(updated);
+          } catch (cause) {
+            const msg =
+              cause instanceof Error ? cause.message : String(cause);
+            appendLog(`Failed to persist import-prompt dismissal: ${msg}`);
+          }
+        };
+        return renderTree(
+          <Box flexDirection="column" paddingX={1} paddingY={1}>
+            <Text color="cyan" bold>
+              {appT(
+                'import.firstRun.prompt',
+                undefined,
+                activeLocale,
+              )}
+            </Text>
+            <Box marginTop={1}>
+              <Text color="gray">
+                {appT('import.firstRun.yes', undefined, activeLocale)}: Y  ·
+                {appT('import.firstRun.no', undefined, activeLocale)}: N  ·
+                {appT(
+                  'import.firstRun.never',
+                  undefined,
+                  activeLocale,
+                )}: X
+              </Text>
+            </Box>
+            <ImportPromptInputPump
+              onYes={() => {
+                setImportPromptOpen(false);
+                appendLog(
+                  'Run `/import claude-code all` to import everything, or `/import claude-code` to pick.',
+                );
+              }}
+              onNo={() => {
+                setImportPromptOpen(false);
+              }}
+              onNever={() => {
+                setImportPromptOpen(false);
+                persistDismissal();
+              }}
+            />
+          </Box>,
+        );
+      }
+      // IMPORT-FIRST-RUN-SECTION (render end)
+
+      // METRICS-WIRE-SECTION (render) — local-only metrics dashboard
+      // opened by `/metrics`. Esc closes; R refreshes the snapshot.
+      if (metricsOverlayData !== null) {
+        return renderTree(
+          <Box flexDirection="column">
+            <MetricsOverlay
+              data={metricsOverlayData}
+              isRefreshing={metricsRefreshing}
+              onRefresh={() => {
+                setMetricsRefreshing(true);
+                void (async (): Promise<void> => {
+                  try {
+                    const cfgTele = (config as unknown as {
+                      telemetry?: { enabled?: boolean; retentionDays?: number };
+                    }).telemetry;
+                    const snap = await snapshotMetrics({
+                      enabled: cfgTele?.enabled === true,
+                      windowDays: cfgTele?.retentionDays ?? 30,
+                    });
+                    setMetricsOverlayData(snap);
+                  } catch {
+                    // best-effort
+                  } finally {
+                    setMetricsRefreshing(false);
+                  }
+                })();
+              }}
+              onClose={() => setMetricsOverlayData(null)}
+            />
+          </Box>,
+        );
+      }
+      // METRICS-WIRE-SECTION (render end)
+
       return renderTree(
-        <ChatScreen
-          config={config}
-          projectRoot={projectRoot}
-          sessionId={sessionId}
-          messages={combinedMessages}
-          toolCallStates={chatState.toolCallStates}
-          isStreaming={chatState.isStreaming}
-          currentOutput={chatState.currentOutput}
-          currentThinking={chatState.currentThinking}
-          pendingApproval={chatState.pendingApproval}
-          thinkingStartedAt={chatState.thinkingStartedAt}
-          contextPercent={contextPercent}
-          slashCommands={slashCommands}
-          onSubmit={onSubmit}
-          onApprove={onApprove}
-          onReject={onReject}
-          onApproveAllInTurn={onApproveAllInTurn}
-          onApproveForSession={onApproveForSession}
-          onSlashExecute={onSlashExecute}
-          onBashExecute={onBashExecute}
-          onCancel={onCancel}
-          skillOverlay={chatState.skillOverlay}
-          onSkillSubmit={onSkillSubmit}
-          onSkillCancel={onSkillCancel}
-          modelName={modelOverride ?? config.model.current}
-          sessionTotalOut={chatState.sessionTotalOut}
-          overlay={overlayForChat}
-          responseTimeoutSeconds={config.context.responseTimeoutSeconds}
-          lastTurnError={chatState.lastTurnError}
-          onClearTurnError={() => chatDispatch({ type: 'CLEAR_TURN_ERROR' })}
-          pendingQueue={chatState.pendingQueue}
-          onEnqueuePending={onEnqueuePending}
-          onClearPending={onClearPending}
-          todos={sessionTodos}
-          agentWorkers={agentWorkers}
-          leadStreaming={chatState.isStreaming}
-          currentConversant={chatState.currentConversant}
-          agentFocusMode={chatState.agentFocusMode}
-          agentSelectedIdx={chatState.agentSelectedIdx}
-          onAgentFocusEnter={onAgentFocusEnter}
-          onAgentFocusExit={onAgentFocusExit}
-          onAgentSelectNext={onAgentSelectNext}
-          onAgentSelectPrev={onAgentSelectPrev}
-          onAgentAttach={onAgentAttach}
-          onAgentDetach={onAgentDetach}
-          // OUTPUT-FILTER-SECTION / READING-MODE-SECTION — wire the
-          // reducer-owned slices + dispatch bridges down to ChatScreen.
-          outputFilters={chatState.outputFilters}
-          onCycleOutputFilter={() =>
-            chatDispatch({ type: 'CYCLE_OUTPUT_FILTER' })
-          }
-          readingMode={chatState.readingMode}
-          onToggleReadingMode={() =>
-            chatDispatch({ type: 'TOGGLE_READING_MODE' })
-          }
-          // BRANCHES-MOUNT-SECTION (props)
-          branchChain={branchChainForBreadcrumb}
-          onOpenBranchPicker={openBranchPicker}
-          // BRANCHES-MOUNT-SECTION (props end)
-          // PROACTIVE-MOUNT-SECTION (Wave 6D)
-          proactiveSuggestion={proactiveSuggestion}
-          // PROACTIVE-MOUNT-SECTION-END
-        />
+        <Box flexDirection="column">
+          {/* PLAN-MODE-OVERLAY-SECTION
+              Top-of-screen Plan Mode banner. Mounts only when the active
+              profile is `plan` (the executor's PLAN-MODE-BLOCK-SECTION
+              also gates on this same field, so the banner stays in sync
+              with the actual block behaviour). Banner copy + colour live
+              in `src/ui/overlays/PlanModeOverlay.tsx`; toggling happens
+              via Ctrl+P (PLAN-MODE-HOTKEY-SECTION above) or the
+              `/profile plan` slash command. */}
+          {config.permissions.profile === 'plan' && <PlanModeBanner />}
+          {/* PLAN-MODE-OVERLAY-SECTION-END */}
+          {/* SKILL-SUGGEST-SECTION (render)
+              Subtle vertically-stacked suggestion toasts above the chat
+              area. Each toast renders one matched skill; Tab activates
+              the first; Esc dismisses. Auto-dismiss after 8s. */}
+          {skillSuggestions.length > 0 && (
+            <Box flexDirection="column">
+              {skillSuggestions.map((s) => (
+                <SkillSuggestionToast
+                  key={s.skillId}
+                  toastText={appT(
+                    'skill.suggest.toast',
+                    { name: s.skillName },
+                    activeLocale,
+                  )}
+                  reason={s.reason}
+                  tabHint={appT(
+                    'skill.suggest.hint.tab',
+                    undefined,
+                    activeLocale,
+                  )}
+                  escHint={appT(
+                    'skill.suggest.hint.esc',
+                    undefined,
+                    activeLocale,
+                  )}
+                />
+              ))}
+            </Box>
+          )}
+          {/* SKILL-SUGGEST-SECTION (render end) */}
+          <ChatScreen
+            config={config}
+            projectRoot={projectRoot}
+            sessionId={sessionId}
+            messages={combinedMessages}
+            toolCallStates={chatState.toolCallStates}
+            isStreaming={chatState.isStreaming}
+            currentOutput={chatState.currentOutput}
+            currentThinking={chatState.currentThinking}
+            pendingApproval={chatState.pendingApproval}
+            thinkingStartedAt={chatState.thinkingStartedAt}
+            contextPercent={contextPercent}
+            slashCommands={slashCommands}
+            onSubmit={onSubmit}
+            onApprove={onApprove}
+            onReject={onReject}
+            onApproveAllInTurn={onApproveAllInTurn}
+            onApproveForSession={onApproveForSession}
+            onSlashExecute={onSlashExecute}
+            onBashExecute={onBashExecute}
+            onCancel={onCancel}
+            skillOverlay={chatState.skillOverlay}
+            onSkillSubmit={onSkillSubmit}
+            onSkillCancel={onSkillCancel}
+            modelName={modelOverride ?? config.model.current}
+            sessionTotalOut={chatState.sessionTotalOut}
+            overlay={overlayForChat}
+            responseTimeoutSeconds={config.context.responseTimeoutSeconds}
+            lastTurnError={chatState.lastTurnError}
+            onClearTurnError={() => chatDispatch({ type: 'CLEAR_TURN_ERROR' })}
+            pendingQueue={chatState.pendingQueue}
+            onEnqueuePending={onEnqueuePending}
+            onClearPending={onClearPending}
+            todos={sessionTodos}
+            agentWorkers={agentWorkers}
+            leadStreaming={chatState.isStreaming}
+            currentConversant={chatState.currentConversant}
+            agentFocusMode={chatState.agentFocusMode}
+            agentSelectedIdx={chatState.agentSelectedIdx}
+            onAgentFocusEnter={onAgentFocusEnter}
+            onAgentFocusExit={onAgentFocusExit}
+            onAgentSelectNext={onAgentSelectNext}
+            onAgentSelectPrev={onAgentSelectPrev}
+            onAgentAttach={onAgentAttach}
+            onAgentDetach={onAgentDetach}
+            // OUTPUT-FILTER-SECTION / READING-MODE-SECTION — wire the
+            // reducer-owned slices + dispatch bridges down to ChatScreen.
+            outputFilters={chatState.outputFilters}
+            onCycleOutputFilter={() =>
+              chatDispatch({ type: 'CYCLE_OUTPUT_FILTER' })
+            }
+            readingMode={chatState.readingMode}
+            onToggleReadingMode={() =>
+              chatDispatch({ type: 'TOGGLE_READING_MODE' })
+            }
+            // BRANCHES-MOUNT-SECTION (props)
+            branchChain={branchChainForBreadcrumb}
+            onOpenBranchPicker={openBranchPicker}
+            // BRANCHES-MOUNT-SECTION (props end)
+            // PROACTIVE-MOUNT-SECTION (Wave 6D)
+            proactiveSuggestion={proactiveSuggestion}
+            // PROACTIVE-MOUNT-SECTION-END
+            // COST-WIRING-SECTION (render) — Wave 9D next-turn chip.
+            nextTurnEstimateUsd={nextTurnEstimate.estimated}
+            nextTurnEstimateUnknown={nextTurnEstimate.unknown}
+            // COST-WIRING-SECTION (render end)
+            // COST-FOOTER-PROPS-SECTION (thread) — cumulative spend
+            // chips threaded from the host into UsageFooter via
+            // MessageBlock. Both values come from the SQLite read
+            // replica and are bound by useMemo on chat-state changes,
+            // so per-render overhead is one ref check.
+            sessionCostUsd={sessionCostUsd}
+            todayCostUsd={todayCostUsd}
+            // COST-FOOTER-PROPS-SECTION (thread end)
+          />
+        </Box>
       );
     }
     default: {
@@ -6281,6 +7303,34 @@ function DiffViewerInputPump(): React.JSX.Element | null {
   });
   return null;
 }
+
+// IMPORT-FIRST-RUN-SECTION (input pump)
+// Tiny invisible component that owns the Y/N/X keystrokes for the
+// import first-run prompt. Lives outside ChatScreen so the chat input
+// stays inert during the prompt.
+function ImportPromptInputPump(props: {
+  readonly onYes: () => void;
+  readonly onNo: () => void;
+  readonly onNever: () => void;
+}): React.JSX.Element | null {
+  useInput((input, key) => {
+    const lower = input.toLowerCase();
+    if (lower === 'y' || key.return) {
+      props.onYes();
+      return;
+    }
+    if (lower === 'x') {
+      props.onNever();
+      return;
+    }
+    if (lower === 'n' || key.escape) {
+      props.onNo();
+      return;
+    }
+  });
+  return null;
+}
+// IMPORT-FIRST-RUN-SECTION (input pump end)
 
 /**
  * Read the full LOCALCODE.md hierarchy (project root → $HOME, plus the
@@ -6327,6 +7377,136 @@ function extractTemplateLabel(task: string): string | null {
   const label = (m[1] ?? '').trim();
   return label.length > 0 ? label : null;
 }
+
+// JOURNAL-RECOVERY-SECTION (component)
+/**
+ * Small ink overlay that surfaces the unfinished-session prompt on
+ * startup when {@link recoverableJournals} returned a non-empty list.
+ *
+ * Key bindings:
+ *   - R  → resume the most recent unfinished session
+ *   - A  → archive every unfinished session (move into the archive dir)
+ *   - Esc → dismiss for this run (the journals stay; the prompt will
+ *           appear again on next launch)
+ *
+ * Strings flow through the i18n table so Russian users see Russian
+ * copy. Component is private to this composition root — no other call
+ * site needs it.
+ */
+interface JournalRecoveryOverlayProps {
+  readonly recoverable: readonly RecoverableJournal[];
+  readonly locale: 'en' | 'ru';
+  readonly onResume: (sessionId: string) => void;
+  readonly onArchiveAll: () => void;
+  readonly onDismiss: () => void;
+}
+function JournalRecoveryOverlay(
+  props: JournalRecoveryOverlayProps,
+): React.JSX.Element {
+  useInput((input, key) => {
+    if (key.escape) {
+      props.onDismiss();
+      return;
+    }
+    const ch = (input ?? '').toLowerCase();
+    if (ch === 'r') {
+      const first = props.recoverable[0];
+      if (first !== undefined) props.onResume(first.sessionId);
+      return;
+    }
+    if (ch === 'a') {
+      props.onArchiveAll();
+      return;
+    }
+  });
+  const count = props.recoverable.length;
+  return (
+    <Box flexDirection="column" paddingX={1} paddingY={1}>
+      <Text color="yellow">
+        {appT('journal.recovery.title', undefined, props.locale)}
+      </Text>
+      <Box marginTop={1}>
+        <Text color="gray">
+          {appT(
+            'journal.recovery.message',
+            { n: String(count) },
+            props.locale,
+          )}
+        </Text>
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text color="gray" dimColor>
+          {appT('journal.recovery.hintResume', undefined, props.locale)}
+        </Text>
+        <Text color="gray" dimColor>
+          {appT('journal.recovery.hintArchive', undefined, props.locale)}
+        </Text>
+        <Text color="gray" dimColor>
+          {appT('journal.recovery.hintIgnore', undefined, props.locale)}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+// JOURNAL-RECOVERY-SECTION (component end)
+
+// SANDBOX-WIRING-SECTION (helper)
+/**
+ * Narrow the optional `[sandbox]` block off `AppConfig` into the
+ * `SandboxRuntimeConfig` shape `run_command` consumes. Returns
+ * `undefined` when the user has not opted in (the tool then falls back
+ * to its built-in defaults — `backend='auto'`, `allowNetwork=true`).
+ *
+ * Read at runtime via structural narrowing because the Zod-validated
+ * `sandbox` block on `Config` is not yet mirrored on the `.d.ts`
+ * `AppConfig` interface (the Zod compat assert tolerates the extra
+ * optional field). Once the .d.ts catches up this helper can be a
+ * plain `cfg.sandbox` read.
+ */
+function readSandboxConfig(cfg: AppConfig | null): SandboxRuntimeConfig | undefined {
+  if (cfg === null) return undefined;
+  const sb = (cfg as unknown as { sandbox?: unknown }).sandbox;
+  if (sb === undefined || sb === null || typeof sb !== 'object') return undefined;
+  const obj = sb as Record<string, unknown>;
+  const backend = obj['backend'];
+  const allowNetwork = obj['allowNetwork'];
+  const allowWritePaths = obj['allowWritePaths'];
+  const timeoutMs = obj['timeoutMs'];
+  if (
+    typeof backend !== 'string' ||
+    typeof allowNetwork !== 'boolean' ||
+    !Array.isArray(allowWritePaths) ||
+    typeof timeoutMs !== 'number'
+  ) {
+    return undefined;
+  }
+  const validBackends: readonly SandboxRuntimeConfig['backend'][] = [
+    'auto',
+    'sandbox-exec',
+    'firejail',
+    'docker',
+    'none',
+  ];
+  if (!validBackends.includes(backend as SandboxRuntimeConfig['backend'])) {
+    return undefined;
+  }
+  const writePaths: string[] = [];
+  for (const p of allowWritePaths) {
+    if (typeof p === 'string') writePaths.push(p);
+  }
+  const out: SandboxRuntimeConfig = {
+    backend: backend as SandboxRuntimeConfig['backend'],
+    allowNetwork,
+    allowWritePaths: writePaths,
+    timeoutMs,
+  };
+  const dockerImage = obj['dockerImage'];
+  if (typeof dockerImage === 'string' && dockerImage.length > 0) {
+    out.dockerImage = dockerImage;
+  }
+  return out;
+}
+// SANDBOX-WIRING-SECTION (helper end)
 
 function findPrefixMatch(
   sessions: readonly Session[],

@@ -28,10 +28,19 @@
  * (because `ContextManager.compress` only mutates state on success).
  */
 
-import type { SlashCommand, CommandContext, Message } from '@/types/global';
+import type { SlashCommand, CommandContext, Message, Backend } from '@/types/global';
 import type { ContextManager } from '@/llm/context-manager';
 import type { StreamChatParams } from '@/types/message';
 import type { SessionManager } from '@/sessions/session-manager';
+// COMPRESS-STRATEGY-SECTION
+import {
+  applyCompressStrategy,
+  chooseCompressStrategy,
+  resolveCheapModel,
+  type CompressStrategyName,
+} from '@/llm/compress-strategy';
+import { dedupReadResults } from '@/llm/semantic-dedup';
+// COMPRESS-STRATEGY-SECTION-END
 
 /**
  * Minimal LLM-adapter surface needed by `/compress`. Mirrors the
@@ -78,6 +87,12 @@ export interface CompressContextManager {
     summarizer: (messages: Message[]) => Promise<string>,
     opts?: CompressOptions,
   ): Promise<CompressResult>;
+  // COMPRESS-STRATEGY-SECTION — optional surface used by the
+  // strategy-aware execution path (dedup / summarize / truncate). Kept
+  // optional so existing callers (and tests) that satisfy only the
+  // legacy `getMessages` + `compress` contract keep working.
+  replaceAll?: (messages: readonly Message[]) => void;
+  // COMPRESS-STRATEGY-SECTION-END
 }
 
 export interface CompressDeps {
@@ -108,6 +123,13 @@ export interface CompressDeps {
    * `/clear` has rotated sessions.
    */
   getSessionId: () => string | null;
+  // COMPRESS-STRATEGY-SECTION — strategy-aware compression. When
+  // `getBackend` is provided the command picks one of
+  // `dedup | summarize | truncate` and applies it via
+  // `contextManager.replaceAll`. Without `getBackend` (or without
+  // `replaceAll`) the legacy summarise path runs unchanged.
+  getBackend?: () => Backend | null;
+  // COMPRESS-STRATEGY-SECTION-END
 }
 
 const COMPRESS_NAME = 'compress';
@@ -129,6 +151,12 @@ export function createCompressCommand(deps: CompressDeps): SlashCommand {
     sessionManager,
     getSessionId,
   } = deps;
+  // COMPRESS-STRATEGY-SECTION
+  const getBackend = deps.getBackend;
+  const replaceAll = contextManager.replaceAll;
+  const strategyEnabled =
+    typeof getBackend === 'function' && typeof replaceAll === 'function';
+  // COMPRESS-STRATEGY-SECTION-END
 
   return {
     name: COMPRESS_NAME,
@@ -142,6 +170,29 @@ export function createCompressCommand(deps: CompressDeps): SlashCommand {
         ctx.print('Nothing to compress — context is empty.');
         return;
       }
+
+      // COMPRESS-STRATEGY-SECTION
+      // Strategy-aware path. Picks `dedup | summarize | truncate` based
+      // on the active backend + the dedup-savings estimate. The legacy
+      // path is preserved verbatim below for callers that don't wire
+      // `getBackend` / `replaceAll`.
+      if (strategyEnabled) {
+        const backend = getBackend !== undefined ? getBackend() : null;
+        if (backend !== null && replaceAll !== undefined) {
+          await runStrategyPath({
+            backend,
+            contextManager,
+            replaceAll,
+            llm,
+            buildCompressPrompt,
+            sessionManager,
+            sessionId: getSessionId(),
+            ctx,
+          });
+          return;
+        }
+      }
+      // COMPRESS-STRATEGY-SECTION-END
 
       ctx.print('Compressing context… (this may take a moment)');
 
@@ -262,3 +313,99 @@ async function runSummary(
 
   return buffer.trim();
 }
+
+// COMPRESS-STRATEGY-SECTION
+/**
+ * Strategy-aware execution path. Picks one of
+ * `dedup | summarize | truncate` via {@link chooseCompressStrategy}
+ * and applies it via `contextManager.replaceAll`.
+ *
+ * Reporting matches the legacy path: "✓ Compressed: N → M (saved ~T
+ * tokens). Strategy: X". The summary text (when present) is also
+ * persisted to the session row so `/resume` can re-inject it.
+ */
+interface RunStrategyPathArgs {
+  backend: Backend;
+  contextManager: CompressContextManager;
+  replaceAll: (messages: readonly Message[]) => void;
+  llm: CompressLLM;
+  buildCompressPrompt: (messages: Message[]) => string;
+  sessionManager?: SessionManager;
+  sessionId: string | null;
+  ctx: CommandContext;
+}
+
+async function runStrategyPath(args: RunStrategyPathArgs): Promise<void> {
+  const {
+    backend,
+    contextManager,
+    replaceAll,
+    llm,
+    buildCompressPrompt,
+    sessionManager,
+    sessionId,
+    ctx,
+  } = args;
+
+  const messages = contextManager.getMessages();
+  const beforeCount = messages.length;
+
+  // Dry-run dedup first so we can feed the savings estimate into the
+  // selector. The dedup pass is pure / cheap (no LLM call).
+  const dedupTrial = dedupReadResults(messages);
+
+  const strategy: CompressStrategyName = chooseCompressStrategy({
+    backend,
+    messages,
+    dedupSavingsTokens: dedupTrial.removedTokens,
+  });
+
+  ctx.print(
+    `Compressing context… strategy: ${strategy}` +
+      (strategy === 'summarize'
+        ? ` (cheap model: ${resolveCheapModel(backend) ?? 'unknown'})`
+        : ''),
+  );
+
+  const summarizer = async (msgs: readonly Message[]): Promise<string> => {
+    return runSummary(llm, buildCompressPrompt, msgs.slice());
+  };
+
+  let outcome;
+  try {
+    outcome = await applyCompressStrategy({
+      strategy,
+      messages,
+      summarize: summarizer,
+    });
+  } catch (cause) {
+    const msg = cause instanceof Error ? cause.message : String(cause);
+    ctx.print(`Compression failed: ${msg}`);
+    return;
+  }
+
+  replaceAll(outcome.messages);
+  const afterCount = outcome.messages.length;
+  const saved = Math.max(0, outcome.removedTokens);
+  ctx.print(
+    `✓ Compressed: ${beforeCount} messages → ${afterCount} (saved ~${saved} tokens). Strategy: ${outcome.applied}.`,
+  );
+
+  if (outcome.summary !== undefined && outcome.summary.length > 0) {
+    const preview =
+      outcome.summary.length > SUMMARY_PREVIEW_CHARS
+        ? `${outcome.summary.slice(0, SUMMARY_PREVIEW_CHARS)}…`
+        : outcome.summary;
+    ctx.print(`Summary: ${preview}`);
+
+    if (sessionId && sessionManager) {
+      try {
+        sessionManager.updateSummary(sessionId, outcome.summary);
+      } catch (cause) {
+        const msg = cause instanceof Error ? cause.message : String(cause);
+        ctx.print(`(Warning: failed to persist summary to session: ${msg})`);
+      }
+    }
+  }
+}
+// COMPRESS-STRATEGY-SECTION-END

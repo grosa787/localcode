@@ -1,0 +1,152 @@
+name: Release Docker image
+
+# Publishes the multi-arch (linux/amd64 + linux/arm64) Docker image of
+# LocalCode to GitHub Container Registry (ghcr.io/grosa787/localcode).
+#
+# Triggers:
+#   - `v*` tag push (e.g. v0.22.0) — publishes `:vX.Y.Z` AND `:latest`.
+#   - workflow_dispatch (manual) — same behavior with the input tag.
+#
+# Auth:
+#   - Default: `GITHUB_TOKEN` (auto-provisioned by Actions). For public
+#     packages under the user/org owning this repo, the token's
+#     `packages: write` permission below is sufficient — no PAT needed.
+#   - Fallback: set a repo / org secret named `GHCR_PAT` (a classic PAT
+#     with `write:packages`) for cases where you push to an account other
+#     than `${{ github.repository_owner }}` or want to bypass token
+#     permissions. The workflow auto-prefers GHCR_PAT when present.
+#
+# Image name is hard-pinned to `ghcr.io/grosa787/localcode` so it doesn't
+# silently move when the repo is forked.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to (re)publish (e.g. v0.22.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/grosa787/localcode
+
+jobs:
+  build-and-push:
+    name: Build + push multi-arch image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag and version
+        id: meta
+        shell: bash
+        run: |
+          set -eu
+          if [ -n "${{ inputs.tag || '' }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          case "$TAG" in
+            v*) VERSION="${TAG#v}" ;;
+            *)  VERSION="$TAG" ;;
+          esac
+          echo "tag=$TAG"         >>"$GITHUB_OUTPUT"
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG version=$VERSION"
+
+      - name: Set up QEMU (cross-arch emulation for arm64)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          # Prefer a long-lived GHCR_PAT if the repo provides one; otherwise
+          # fall back to the workflow-scoped GITHUB_TOKEN.
+          password: ${{ secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Compute Docker tags + labels
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.meta.outputs.tag }}
+            type=raw,value=${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.title=LocalCode
+            org.opencontainers.image.description=Local-first AI coding assistant
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/grosa787/localcode
+            org.opencontainers.image.url=https://github.com/grosa787/localcode
+            org.opencontainers.image.documentation=https://github.com/grosa787/localcode/blob/main/docs/DOCKER.md
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build + push multi-arch image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          # Layer cache via the GitHub Actions cache backend.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Print image digest
+        run: |
+          echo "Pushed digest: ${{ steps.build.outputs.digest }}"
+          echo "Pulled with:   docker pull ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}"
+          echo "or:            docker pull ${{ env.IMAGE }}:latest"
+
+      - name: Smoke test pulled image (amd64)
+        shell: bash
+        run: |
+          set -eu
+          IMG="${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}"
+          echo "Pulling $IMG (linux/amd64)..."
+          docker pull --platform linux/amd64 "$IMG"
+          echo "--- localcode --version ---"
+          docker run --rm --platform linux/amd64 "$IMG" --version
+          echo "--- localcode --help (head) ---"
+          docker run --rm --platform linux/amd64 "$IMG" --help | head -20
+
+      - name: Report final image size
+        shell: bash
+        run: |
+          set -eu
+          IMG="${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}"
+          # Per-arch size (compressed manifest) via `docker buildx imagetools`.
+          docker buildx imagetools inspect "$IMG" \
+            --format '{{json .Manifest}}' | head -200 || true
+          # Uncompressed on-disk size for the locally-pulled (amd64) variant.
+          size_bytes="$(docker image inspect "$IMG" --format '{{.Size}}' || echo 0)"
+          size_mb=$(( size_bytes / 1024 / 1024 ))
+          echo "Local image size (linux/amd64, uncompressed): ${size_mb} MB"
+          if [ "$size_mb" -gt 200 ]; then
+            echo "::warning::Image size ${size_mb} MB exceeds the 200 MB soft cap"
+          fi

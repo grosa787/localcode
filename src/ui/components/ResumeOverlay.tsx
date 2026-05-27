@@ -14,6 +14,9 @@ import React, { useCallback, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { dimSeparator, noxPalette, textMuted } from '../theme.js';
 import type { Session } from '../../types/global.js';
+// I18N-STRINGS-START
+import { useT } from '../../i18n/index.js';
+// I18N-STRINGS-END
 
 export interface ResumeOverlayProps {
   readonly sessions: readonly Session[];
@@ -42,6 +45,9 @@ function ResumeOverlay({
   onSelect,
   onClose,
 }: ResumeOverlayProps): React.JSX.Element {
+  // I18N-STRINGS-START
+  const { t } = useT();
+  // I18N-STRINGS-END
   const [cursor, setCursor] = useState<number>(0);
 
   const maxCursor = sessions.length - 1;
@@ -89,21 +95,30 @@ function ResumeOverlay({
       paddingY={1}
     >
       <Box>
+        {/* I18N-STRINGS-START */}
         <Text color={noxPalette.white} bold>
-          Resume a previous session
+          {t('resume.title')}
         </Text>
+        {/* I18N-STRINGS-END */}
       </Box>
 
       {sessions.length === 0 ? (
         <Box marginTop={1}>
-          <Text color={textMuted}>No saved sessions yet.</Text>
+          {/* I18N-STRINGS-START */}
+          <Text color={textMuted}>{t('resume.empty')}</Text>
+          {/* I18N-STRINGS-END */}
         </Box>
       ) : (
         <Box flexDirection="column" marginTop={1}>
           {sessions.slice(0, 20).map((s, i) => {
             const active = i === cursor;
             const arrow = active ? '❯ ' : '  ';
-            const title = s.title !== null && s.title.trim().length > 0 ? s.title : '(untitled)';
+            // I18N-STRINGS-START
+            const title =
+              s.title !== null && s.title.trim().length > 0
+                ? s.title
+                : t('resume.untitled');
+            // I18N-STRINGS-END
             return (
               <Box key={`sess-${s.id}`} flexDirection="row">
                 <Text color={active ? noxPalette.light : textMuted}>{arrow}</Text>
@@ -124,20 +139,26 @@ function ResumeOverlay({
 
       {selected !== undefined && (
         <Box flexDirection="column" marginTop={1} paddingLeft={2}>
-          <Text color={textMuted}>Summary:</Text>
+          {/* I18N-STRINGS-START */}
+          <Text color={textMuted}>{t('resume.summary')}</Text>
           <Text color={noxPalette.white}>
             {selected.summary !== null && selected.summary.trim().length > 0
               ? truncate(selected.summary, 240)
-              : '(no summary available)'}
+              : t('resume.summary.none')}
           </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
       )}
 
       <Box marginTop={1}>
+        {/* I18N-STRINGS-START */}
         <Text color={textMuted}>
-          ↑/↓ select · Enter resume · Esc close · showing up to 20 entries
-          {sessions.length > 20 ? ` (${sessions.length - 20} older hidden)` : ''}
+          {t('resume.footer')}
+          {sessions.length > 20
+            ? t('resume.footer.olderHidden', { n: sessions.length - 20 })
+            : ''}
         </Text>
+        {/* I18N-STRINGS-END */}
       </Box>
     </Box>
   );

@@ -778,5 +778,11 @@ export type TranslationKey =
   | 'whiteboard.nothingToSend'
   | 'whiteboard.noModel'
   | 'whiteboard.noVision'
-  | 'whiteboard.exportFailed';
-// /WHITEBOARD-SECTION
+  | 'whiteboard.exportFailed'
+  // /WHITEBOARD-SECTION
+
+  // PRESENCE-SECTION — multi-user collaboration
+  | 'presence.typing.one'
+  | 'presence.typing.many'
+  | 'presence.peers';
+// PRESENCE-SECTION-END

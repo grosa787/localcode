@@ -35,6 +35,7 @@ localcode --web                      # browser UI (opens automatically)
 - [Supported providers](#supported-providers)
 - [Requirements](#requirements)
 - [Install](#install)
+- [Docker](#docker)
 - [Quick start](#quick-start)
 - [CLI flags](#cli-flags)
 - [Web mode](#web-mode)
@@ -68,7 +69,19 @@ localcode --web                      # browser UI (opens automatically)
 - **Architecture rules** — declare layering rules in `.localcode/arch.toml`; PreToolUse validator blocks forbidden imports.
 - **Built-in security** — secret scanner pre-commit hook (AWS / GitHub / OpenAI / Anthropic / Stripe / private-key patterns + entropy heuristic), sensitive-files gating, redaction.
 - **LAN sharing** — mDNS discovery + HMAC pairing + AES-GCM session sync; share a session with a colleague on the same network without any cloud round-trip.
-- **i18n** — full UI in English and Russian, switchable live.
+- **Multi-user web** — two browser tabs on the same session see each other's messages live, with typing presence and colored peer dots.
+- **Sandboxed `run_command`** — every shell command runs through `sandbox-exec` (macOS), `firejail` (Linux), or Docker — fully configurable per-platform.
+- **Plan mode** — visible 🔒 banner + Ctrl+P hotkey; write & run tools blocked so the model can plan before touching anything.
+- **Batch approval** — when the model emits 3+ mutating tool calls, a single 2-pane dialog reviews them all at once.
+- **Crash journal + resume** — synchronous JSONL per chunk; on next start, offer to resume any session interrupted by SIGKILL / power loss.
+- **Cost forecast** — `~$0.02 next turn` chip before sending; cumulative session + today totals in the footer.
+- **Smarter context compression** — semantic dedup of repeated `read_file` results, write/run preserved verbatim, middle summarised via a cheap model.
+- **Image paste TUI** — Ctrl+V pastes the clipboard image straight into the conversation (mac / linux / win).
+- **Skill auto-suggest** — when your message matches a skill's `triggers` regex, a toast offers Tab-to-activate.
+- **Marketplace browse** — `/skills browse` (anthropics/skills) and `/mcp browse` (modelcontextprotocol/servers) install with one keypress.
+- **Migration from Claude Code** — `/import claude-code` imports your `~/.claude/projects/*/` history into the local SQLite.
+- **/metrics dashboard** — opt-in tool success rate, cache hit %, cost per model, top expensive sessions — all local.
+- **i18n** — full UI in English and Russian, switchable live; all 6 main overlays fully translated.
 
 <br/>
 
@@ -119,6 +132,30 @@ sudo dnf install \
 # arm64: replace x86_64 with aarch64.
 ```
 
+<!-- HOMEBREW-README-SECTION -->
+### Homebrew (macOS & Linux)
+
+```sh
+brew install grosa787/tap/localcode
+```
+
+Auto-resolves the right prebuilt binary for `darwin-arm64`, `darwin-x64`,
+`linux-arm64`, or `linux-x64`. Upgrade later with `brew upgrade localcode`.
+See [docs/HOMEBREW.md](docs/HOMEBREW.md) for tap-bootstrap and maintainer
+setup details.
+<!-- /HOMEBREW-README-SECTION -->
+
+<!-- SCOOP-README-SECTION -->
+### Scoop (Windows)
+
+```sh
+scoop bucket add localcode https://github.com/grosa787/scoop-bucket
+scoop install localcode
+```
+
+See [docs/SCOOP.md](docs/SCOOP.md) for bucket-bootstrap and maintainer setup.
+<!-- /SCOOP-README-SECTION -->
+
 ### One-command install script
 
 ```sh
@@ -155,6 +192,38 @@ To run without installing:
 bun install
 bun run dev          # alias for: bun run src/cli.tsx
 ```
+
+<br/>
+
+<!-- DOCKER-README-SECTION -->
+## Docker
+
+LocalCode ships as a multi-arch image (`linux/amd64` + `linux/arm64`) to GitHub
+Container Registry: **`ghcr.io/grosa787/localcode`**. Tags: `latest`, `vX.Y.Z`,
+and `X.Y.Z` per release.
+
+```sh
+# TUI (needs an interactive TTY)
+docker run -it --rm \
+  -v "$(pwd):/workspace" \
+  -v "$HOME/.localcode:/root/.localcode" \
+  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  ghcr.io/grosa787/localcode:latest
+
+# Web UI (port-mapped, no TTY)
+docker run --rm -p 7777:7777 \
+  -v "$(pwd):/workspace" \
+  -v "$HOME/.localcode:/root/.localcode" \
+  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  ghcr.io/grosa787/localcode:latest \
+  --web --web-host 0.0.0.0 --no-open
+```
+
+For local backends (Ollama / LM Studio) running on the host, use
+`host.docker.internal` (Docker Desktop) or add
+`--add-host=host.docker.internal:host-gateway` on Linux. Full usage,
+auth, persistence, and compose recipes: **[docs/DOCKER.md](docs/DOCKER.md)**.
+<!-- /DOCKER-README-SECTION -->
 
 <br/>
 

@@ -56,6 +56,9 @@ import { TextInput } from '@inkjs/ui';
 import { noxPalette, textMuted } from '../theme.js';
 import type { Backend } from '../../types/global.js';
 import { PROVIDER_DEFAULTS, PROVIDER_META } from '../../config/defaults.js';
+// I18N-STRINGS-START
+import { useT } from '../../i18n/index.js';
+// I18N-STRINGS-END
 
 /**
  * URLs keyed by Backend — one entry per row in the overlay.
@@ -287,6 +290,9 @@ function ProviderOverlay({
   onCancel,
   onPing,
 }: ProviderOverlayProps): React.JSX.Element {
+  // I18N-STRINGS-START
+  const { t } = useT();
+  // I18N-STRINGS-END
   // Which row the user is currently highlighting with the arrow keys.
   const [cursor, setCursor] = useState<number>(() => {
     const idx = ROWS.findIndex((r) => r.id === currentBackend);
@@ -334,12 +340,13 @@ function ProviderOverlay({
    */
   const validationError = useMemo<string | null>(() => {
     const u = selectedUrl.trim();
+    // I18N-STRINGS-START
     // URL required for `custom`; for cloud providers we also require
     // a non-empty URL (the default is pre-seeded so this should only
     // fire if the user blanks the field).
     if (u.length === 0) {
-      if (selected === 'custom') return 'Custom URL required';
-      if (selectedRequiresKey) return 'Cloud provider URL is empty';
+      if (selected === 'custom') return t('provider.error.customUrlRequired');
+      if (selectedRequiresKey) return t('provider.error.cloudUrlEmpty');
       return null;
     }
     // Cloud providers must use http(s) — explicitly reject localhost
@@ -347,34 +354,33 @@ function ProviderOverlay({
     // tunnel. Local providers and custom keep the relaxed check.
     if (selectedRequiresKey) {
       if (!/^https?:\/\//.test(u)) {
-        return 'URL must start with http:// or https://';
+        return t('provider.error.urlScheme');
       }
-      // Reject localhost for cloud providers — almost certainly a
-      // misconfig. (The user can use `custom` for tunneled cloud
-      // endpoints.)
       if (/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(u)) {
-        return 'Cloud provider URL must not be localhost';
+        return t('provider.error.cloudLocalhost');
       }
     } else {
       if (!isValidUrl(u, false)) {
-        return 'URL must start with http:// or https://';
+        return t('provider.error.urlScheme');
       }
     }
-    // API-key check for cloud providers — accept either an explicit
-    // key or a non-empty env-var fallback.
     if (selectedRequiresKey && isApiKeyRow(selected)) {
       const resolved = resolveDisplayKey(selected, keyMap[selected]);
       if (resolved.source === 'none') {
         const meta = PROVIDER_META[selected];
         const envHint =
           meta.apiKeyEnvVar !== undefined
-            ? ` (or set $${meta.apiKeyEnvVar})`
+            ? t('provider.error.apiKeyEnvHint', { var: meta.apiKeyEnvVar })
             : '';
-        return `API key required for ${meta.displayName}${envHint}`;
+        return t('provider.error.apiKeyRequired', {
+          name: meta.displayName,
+          envHint,
+        });
       }
     }
     return null;
-  }, [keyMap, selected, selectedRequiresKey, selectedUrl]);
+    // I18N-STRINGS-END
+  }, [keyMap, selected, selectedRequiresKey, selectedUrl, t]);
 
   const triggerPing = useCallback(
     (url: string): void => {
@@ -657,7 +663,9 @@ function ProviderOverlay({
         </Box>
       );
     }
-    const display = value.length === 0 ? '(not set)' : value;
+    // I18N-STRINGS-START
+    const display = value.length === 0 ? t('provider.url.notSet') : value;
+    // I18N-STRINGS-END
     const colour =
       value.length === 0 ? textMuted : active ? noxPalette.white : noxPalette.light;
     return (
@@ -698,16 +706,20 @@ function ProviderOverlay({
     const resolved = resolveDisplayKey(row.id, configKey);
     let label: string;
     let colour: string = textMuted;
+    // I18N-STRINGS-START
     if (resolved.source === 'config') {
-      label = `key: ${maskKey(configKey)} set`;
+      label = t('provider.key.set', { mask: maskKey(configKey) });
       colour = active ? noxPalette.white : noxPalette.light;
     } else if (resolved.source === 'env' && resolved.envVar !== undefined) {
-      label = `key: from env $${resolved.envVar}`;
+      label = t('provider.key.fromEnv', { var: resolved.envVar });
       colour = '#86efac';
     } else {
-      label = row.requiresApiKey ? 'key: not set' : 'key: optional';
+      label = row.requiresApiKey
+        ? t('provider.key.notSet')
+        : t('provider.key.optional');
       colour = row.requiresApiKey ? '#fca5a5' : textMuted;
     }
+    // I18N-STRINGS-END
     return (
       <Box marginLeft={1}>
         <Text color={colour}>[{label}]</Text>
@@ -717,11 +729,13 @@ function ProviderOverlay({
 
   const editingHint: string | null = useMemo(() => {
     if (editing === null) return null;
+    // I18N-STRINGS-START
     if (editing.field === 'url') {
-      return 'Editing URL — Enter to save · Tab to switch to key · Esc to cancel';
+      return t('provider.editingUrl');
     }
-    return 'Editing API key (visible — clear after pasting) · Enter to save · Tab to switch to URL · Esc to cancel';
-  }, [editing]);
+    return t('provider.editingKey');
+    // I18N-STRINGS-END
+  }, [editing, t]);
 
   return (
     <Box
@@ -732,9 +746,11 @@ function ProviderOverlay({
       paddingY={1}
     >
       <Box>
+        {/* I18N-STRINGS-START */}
         <Text color={noxPalette.white} bold>
-          Provider
+          {t('provider.title')}
         </Text>
+        {/* I18N-STRINGS-END */}
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
@@ -757,9 +773,11 @@ function ProviderOverlay({
                 </Text>
               </Box>
               {renderUrlCell(row, active)}
+              {/* I18N-STRINGS-START */}
               {active && (editing === null || editing.row !== row.id) && (
-                <Text color={textMuted}>{'  '}[edit]</Text>
+                <Text color={textMuted}>{'  '}{t('provider.edit')}</Text>
               )}
+              {/* I18N-STRINGS-END */}
               {renderKeyCell(row, active)}
               {renderPingDot(row.id)}
             </Box>
@@ -768,29 +786,25 @@ function ProviderOverlay({
       </Box>
 
       <Box marginTop={1} flexDirection="column">
-        <Text color={textMuted}>
-          Notes:
-        </Text>
-        <Text color={textMuted}>
-          {'  • '}OpenRouter from Russia: VPN may be required (Россия
-          блокирует OpenRouter напрямую). Use Cloudflare WARP, Outline
-          VPN, or proxy via the Custom row.
-        </Text>
-        <Text color={textMuted}>
-          {'  • '}Cloud providers need an API key — get one from each
-          provider's dashboard, or set the env var (e.g. $OPENAI_API_KEY).
-        </Text>
+        {/* I18N-STRINGS-START */}
+        <Text color={textMuted}>{t('provider.notes.title')}</Text>
+        <Text color={textMuted}>{t('provider.notes.openrouterRu')}</Text>
+        <Text color={textMuted}>{t('provider.notes.cloudKeys')}</Text>
         {selected === 'openrouter' && (
           <Text color={noxPalette.yellow}>
-            {'  ! '}OpenRouter selected — confirm you can reach
-            openrouter.ai before applying.
+            {t('provider.warn.openrouter')}
           </Text>
         )}
+        {/* I18N-STRINGS-END */}
       </Box>
 
       {validationError !== null && (
         <Box marginTop={1}>
-          <Text color="#fca5a5">Error: {validationError}</Text>
+          {/* I18N-STRINGS-START */}
+          <Text color="#fca5a5">
+            {t('provider.error.prefix', { msg: validationError })}
+          </Text>
+          {/* I18N-STRINGS-END */}
         </Box>
       )}
 
@@ -801,10 +815,9 @@ function ProviderOverlay({
       )}
 
       <Box marginTop={1}>
-        <Text color={textMuted}>
-          ↑/↓ navigate · (space) select · (enter) edit URL · (tab/e) edit
-          key · (ctrl+enter / a) apply · (esc) cancel
-        </Text>
+        {/* I18N-STRINGS-START */}
+        <Text color={textMuted}>{t('provider.footer')}</Text>
+        {/* I18N-STRINGS-END */}
       </Box>
     </Box>
   );

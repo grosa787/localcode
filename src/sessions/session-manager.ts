@@ -21,6 +21,29 @@ import { resolvePrice } from '@/llm/pricing/resolver';
 import { computeCostBreakdown } from '@/llm/pricing/cost-calculator';
 // COST-PERSIST-SECTION-END
 import { getDb, getReadDb, SessionDbError } from './db';
+// JOURNAL-HOOK-SECTION
+// Crash-resilient per-session journal — `JournalSink` is the minimal
+// interface SessionManager needs to record `message_committed` events.
+// Wiring is opt-in: callers (app.tsx / web boot) call
+// `attachJournal(sessionId, sink)` after creating the JournalWriter so
+// the manager can fire events on every successful `addMessage` commit.
+// Zero overhead when nothing is attached — the per-session map starts
+// empty and lookups short-circuit.
+import type { JournalEvent } from './journal';
+
+/**
+ * Minimal sink interface for the crash journal. SessionManager calls
+ * `append` after each successful `addMessage` so the journal records a
+ * `message_committed` event alongside the SQLite write. The concrete
+ * implementation lives in `./journal` (`JournalWriter`).
+ *
+ * Errors thrown from `append` are swallowed — journaling must NEVER
+ * disrupt the local persistence path.
+ */
+export interface JournalSink {
+  append(event: JournalEvent): void;
+}
+// JOURNAL-HOOK-SECTION-END
 
 // ---------- Todos ----------
 
@@ -565,6 +588,14 @@ export class SessionManager {
   private lanSyncBridge: LanSyncBridge | null = null;
   // LAN-SYNC-SECTION (end)
 
+  // JOURNAL-HOOK-SECTION (state)
+  // Per-session crash journal sinks. Map starts empty so the dominant
+  // (no-journal) path adds one Map.get → null check to addMessage and
+  // nothing else. Sinks are NEVER constructed here — callers
+  // (app.tsx / web boot) own the JournalWriter lifecycle.
+  private readonly journalSinks: Map<string, JournalSink> = new Map();
+  // JOURNAL-HOOK-SECTION-END
+
   // Prepared statements — created once in the constructor.
   private readonly stmtInsertSession: Statement;
   private readonly stmtGetSession: Statement;
@@ -932,6 +963,32 @@ export class SessionManager {
   }
   // LAN-SYNC-SECTION (setter end)
 
+  // JOURNAL-HOOK-SECTION (setter)
+  /**
+   * Attach a crash-resilient journal sink to a specific session. After
+   * this call, every successful `addMessage(sessionId, …)` fires a
+   * `message_committed` event on the sink. Idempotent — re-attaching
+   * the same session id replaces the prior sink (caller is responsible
+   * for closing the old one).
+   *
+   * The journal writer is owned by the caller; SessionManager never
+   * closes it. Use {@link detachJournal} to remove the binding on
+   * session switch / shutdown.
+   */
+  attachJournal(sessionId: string, sink: JournalSink): void {
+    this.journalSinks.set(sessionId, sink);
+  }
+
+  /**
+   * Remove the journal sink for a session (no-op if none was attached).
+   * Called on clean session close so subsequent writes don't journal
+   * after the writer has been closed.
+   */
+  detachJournal(sessionId: string): void {
+    this.journalSinks.delete(sessionId);
+  }
+  // JOURNAL-HOOK-SECTION (setter end)
+
   // ---------- Messages ----------
 
   addMessage(
@@ -1064,6 +1121,24 @@ export class SessionManager {
       }
     }
     // LAN-SYNC-SECTION (end)
+    // JOURNAL-HOOK-SECTION (commit)
+    // Record the commit in the crash journal so a recovery scan after
+    // a kill -9 can correlate journaled in-flight chunks against the
+    // last successfully persisted message. Best-effort: a journal
+    // failure must NOT throw out of addMessage.
+    const journalSink = this.journalSinks.get(sessionId);
+    if (journalSink !== undefined) {
+      try {
+        journalSink.append({
+          ts: Date.now(),
+          type: 'message_committed',
+          data: { messageId: message.id, role: message.role },
+        });
+      } catch {
+        /* swallow — journaling is best-effort */
+      }
+    }
+    // JOURNAL-HOOK-SECTION (commit end)
   }
 
   /**
@@ -1473,6 +1548,76 @@ export class SessionManager {
       topSessions,
     };
   }
+
+  // COST-QUERIES-SECTION (start) ----------
+  //
+  // Cheap rollup helpers for the cost-forecast chip rendered above the
+  // composer. `getSessionCost(sid)` returns the sum of `cost_usd` for
+  // every assistant message in the given session; `getTodayCost()`
+  // returns the cross-session total since UTC midnight of the current
+  // day. Both use SUM() so the query stays a single index seek with no
+  // row materialisation.
+
+  /**
+   * Sum of persisted `cost_usd` across every message in the session.
+   * Unknown sessions and sessions with no priced rows return 0.
+   * Local-provider rows (which leave `cost_usd` NULL) are excluded
+   * naturally via the SUM aggregation.
+   */
+  getSessionCost(sessionId: string): number {
+    interface Row {
+      total: number | null;
+    }
+    try {
+      const stmt = this.readDb.prepare(
+        `SELECT COALESCE(SUM(cost_usd), 0) AS total
+         FROM messages
+         WHERE session_id = ? AND cost_usd IS NOT NULL`,
+      );
+      const row = stmt.get(sessionId) as Row | null | undefined;
+      if (row === null || row === undefined) return 0;
+      const v = row.total;
+      return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : String(cause);
+      throw new SessionDbError(
+        `Failed to read session cost for ${sessionId}: ${msg}`,
+        cause,
+      );
+    }
+  }
+
+  /**
+   * Sum of persisted `cost_usd` across every session since local
+   * midnight (start-of-today on the host's clock). Sub-agent rows are
+   * NOT excluded — they reflect real spend on the user's account.
+   */
+  getTodayCost(): number {
+    interface Row {
+      total: number | null;
+    }
+    try {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const sinceMs = startOfToday.getTime();
+      const stmt = this.readDb.prepare(
+        `SELECT COALESCE(SUM(cost_usd), 0) AS total
+         FROM messages
+         WHERE created_at >= ? AND cost_usd IS NOT NULL`,
+      );
+      const row = stmt.get(sinceMs) as Row | null | undefined;
+      if (row === null || row === undefined) return 0;
+      const v = row.total;
+      return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : String(cause);
+      throw new SessionDbError(
+        `Failed to read today's total cost: ${msg}`,
+        cause,
+      );
+    }
+  }
+  // COST-QUERIES-SECTION (end) ----------
 
   // ---------- USAGE-AGGREGATE-SECTION (start) ----------
   //

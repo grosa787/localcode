@@ -788,4 +788,10 @@ export const ru: Record<TranslationKey, string> = {
   'whiteboard.noVision': 'Модель {model} может не принимать изображения — отправляем как есть',
   'whiteboard.exportFailed': 'Не удалось экспортировать рисунок: {message}',
   // /WHITEBOARD-SECTION
+
+  // PRESENCE-SECTION — совместная работа нескольких пользователей
+  'presence.typing.one': '{name} печатает…',
+  'presence.typing.many': '{n} человек печатают…',
+  'presence.peers': '{n} участников',
+  // /PRESENCE-SECTION
 };

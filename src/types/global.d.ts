@@ -117,6 +117,22 @@ export interface PermissionsConfig {
    * explicitly (see `getDefaultConfig` in `src/config/defaults.ts`).
    */
   profile: PermissionProfile;
+  // BATCH-APPROVAL-SECTION
+  /**
+   * Number of mutating tool calls in a single LLM turn that triggers
+   * the unified batch-approval dialog. Default 3 (multi-file refactor
+   * threshold). Range 1..99 enforced at the schema layer. Old configs
+   * (and most test/onboarding literals) omit the field; Zod fills the
+   * default during parse, and code that reads the value via
+   * `?? 3` stays robust on stub configs that bypass parse entirely.
+   *
+   * Optional on the type (rather than required) so existing literal
+   * `permissions: { autoApprove: [], profile: 'default' }` constructs
+   * in tests, onboarding, web API helpers, and project-rc overrides
+   * keep type-checking without touching every call site.
+   */
+  batchApprovalThreshold?: number;
+  // BATCH-APPROVAL-SECTION-END
 }
 
 export interface ContextSettingsConfig {
@@ -359,7 +375,60 @@ export interface AppConfig {
    */
   firstRun?: FirstRunConfig;
   // FIRST-RUN-CONFIG-SECTION-END
+
+  // TELEMETRY-CONFIG-SECTION
+  /**
+   * Opt-in local-only telemetry aggregation. Drives the `/metrics`
+   * dashboard. Data NEVER leaves the user's machine — the aggregator
+   * reads SQLite + crash journals only. Optional; absence yields the
+   * safe defaults (`enabled: false`, `retentionDays: 30`). Mirrors
+   * `TelemetrySchema` in `src/config/types.ts`.
+   *
+   *   - `enabled`       — master switch. Default `false` (opt-in).
+   *   - `retentionDays` — bound the lookback window. 1..365. Default 30.
+   */
+  telemetry?: TelemetryConfig;
+  // TELEMETRY-CONFIG-SECTION-END
+
+  // IMPORT-FIRST-RUN-SECTION
+  /**
+   * Migration state — tracks whether the first-launch import prompt
+   * for Claude Code sessions has already been dismissed. Persisted so
+   * subsequent launches don't re-prompt. Mirrors `MigrationSchema` in
+   * `src/config/types.ts`.
+   *
+   *   - `claudeCodeDismissed` — `true` once the user picked "Not now"
+   *     or "Never ask" on the first-run prompt. Optional so legacy
+   *     configs round-trip cleanly.
+   */
+  migration?: MigrationConfig;
+  // IMPORT-FIRST-RUN-SECTION-END
 }
+
+// TELEMETRY-CONFIG-SECTION
+/**
+ * Opt-in local-only telemetry settings. Mirrors `TelemetrySchema` in
+ * `src/config/types.ts`. Both fields are required on the type (Zod
+ * fills the defaults at parse time so the runtime value is always
+ * complete), and the outer `AppConfig.telemetry?` keeps the section
+ * itself optional for legacy literal config sites.
+ */
+export interface TelemetryConfig {
+  enabled: boolean;
+  retentionDays: number;
+}
+// TELEMETRY-CONFIG-SECTION-END
+
+// IMPORT-FIRST-RUN-SECTION
+/**
+ * Migration-state shape carried by `AppConfig.migration`. Currently
+ * holds only the dismissal flag for the Claude Code import prompt.
+ * Required on the type; Zod fills the default at parse time.
+ */
+export interface MigrationConfig {
+  claudeCodeDismissed: boolean;
+}
+// IMPORT-FIRST-RUN-SECTION-END
 
 // FIRST-RUN-CONFIG-SECTION
 /**
@@ -723,7 +792,12 @@ export type OverlayKind =
   | 'cost'
   | 'perf'
   // BRANCHES-OVERLAY-KIND — `/branch` picker (Ctrl+B).
-  | 'branch';
+  | 'branch'
+  // METRICS-WIRE-SECTION — local-only metrics dashboard opened by
+  // `/metrics`. The aggregator gates on `config.telemetry.enabled` and
+  // returns a synthetic "disabled" snapshot when off, so the kind is
+  // always safe to dispatch.
+  | 'metrics';
 
 export interface CommandContext {
   projectRoot: string;

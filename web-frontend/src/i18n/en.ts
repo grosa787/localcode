@@ -786,4 +786,10 @@ export const en: Record<TranslationKey, string> = {
   'whiteboard.noVision': "Model {model} may not accept images — attaching anyway",
   'whiteboard.exportFailed': 'Failed to export drawing: {message}',
   // /WHITEBOARD-SECTION
+
+  // PRESENCE-SECTION — multi-user collaboration
+  'presence.typing.one': '{name} is typing…',
+  'presence.typing.many': '{n} peers are typing…',
+  'presence.peers': '{n} peers',
+  // /PRESENCE-SECTION
 };

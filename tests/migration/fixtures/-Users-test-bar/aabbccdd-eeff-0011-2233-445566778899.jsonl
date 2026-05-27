@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2024-05-03T11:00:00.000Z","message":{"role":"user","content":"debug worker hang"}}
+{"type":"assistant","timestamp":"2024-05-03T11:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"OK"},{"type":"tool_use","id":"tu_2","name":"Bash","input":{"command":"ps aux"}}]}}
+this is a malformed line — should be skipped without crashing
+{"type":"tool_result","timestamp":"2024-05-03T11:00:02.000Z","tool_use_id":"tu_2","content":"USER  PID  CMD ..."}

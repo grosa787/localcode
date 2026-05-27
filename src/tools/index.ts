@@ -191,6 +191,16 @@ export type {
 export interface ToolHandler {
   preview: (args: unknown, ctx: ToolContext) => Promise<ToolResult>;
   commit?: (args: unknown, ctx: ToolContext) => Promise<ToolResult>;
+  /**
+   * Marks the handler as a pure read of project state — no filesystem
+   * mutations, no shell execution, no network side-effects whose result
+   * is order-dependent. The tool-executor uses this to fire the call
+   * speculatively in parallel with mutating tools that are waiting on
+   * the UI approval prompt, shaving 100–300ms per turn when the model
+   * batches reads with a write. When omitted, the tool is treated as
+   * non-speculative (the conservative default).
+   */
+  readOnly?: boolean;
 }
 
 /** Registry keyed by tool name (matches `TOOLS_SCHEMA` function names). */
@@ -233,13 +243,16 @@ export function createToolHandlerMap(ctx: ToolContext): ToolHandlerMap {
   return {
     read_file: {
       preview: (args) => readFile(args as Parameters<typeof readFile>[0], ctx),
+      readOnly: true,
     },
     list_dir: {
       preview: (args) => listDir(args as Parameters<typeof listDir>[0], ctx),
+      readOnly: true,
     },
     glob_search: {
       preview: (args) =>
         globSearch(args as Parameters<typeof globSearch>[0], ctx),
+      readOnly: true,
     },
     write_file: {
       preview: (args) =>
@@ -268,15 +281,18 @@ export function createToolHandlerMap(ctx: ToolContext): ToolHandlerMap {
     fetch_image: {
       preview: (args) =>
         fetchImage(args as Parameters<typeof fetchImage>[0], ctx),
+      readOnly: true,
     },
     lint_file: {
       preview: (args) => lintFile(args as Parameters<typeof lintFile>[0], ctx),
+      readOnly: true,
     },
     // `find_symbol` is read-only — no commit step, no approval required.
     // Agent F registers the matching schema entry in `src/llm/tools-schema.ts`.
     find_symbol: {
       preview: (args) =>
         findSymbol(args as Parameters<typeof findSymbol>[0], ctx),
+      readOnly: true,
     },
     // Agent-* tools — only effective when the runtime supplied an
     // `AgentOrchestrator` via the augmented context. Otherwise the

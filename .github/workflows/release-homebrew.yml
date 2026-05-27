@@ -1,0 +1,188 @@
+name: Homebrew Tap Update
+
+# Renders dist/homebrew/localcode.rb (template) with the current version + per-asset
+# SHA-256 from the just-published GitHub Release and pushes the result to
+# grosa787/homebrew-tap as Formula/localcode.rb. Users install via:
+#   brew install grosa787/tap/localcode
+#
+# Trigger:
+#   - `v*` tag push (after release.yml has uploaded the tarballs + SHA256SUMS)
+#   - manual workflow_dispatch (for re-running against an existing release)
+#
+# Required secret:
+#   HOMEBREW_TAP_PAT — a fine-grained Personal Access Token with
+#     `contents: write` permission on the grosa787/homebrew-tap repo.
+#   See docs/HOMEBREW.md for one-time maintainer setup.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to bump the tap to (e.g. v0.22.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bump-tap:
+    name: Render formula & push to tap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repo (template lives here)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Resolve tag and version
+        id: meta
+        shell: bash
+        run: |
+          set -eu
+          if [ -n "${{ inputs.tag || '' }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          case "$TAG" in
+            v*) VERSION="${TAG#v}" ;;
+            *)  VERSION="$TAG"; TAG="v$TAG" ;;
+          esac
+          echo "tag=$TAG"         >>"$GITHUB_OUTPUT"
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG version=$VERSION"
+
+      # release.yml runs in parallel on tag push; wait until SHA256SUMS exists
+      # on the GitHub Release before we try to render. Bounded to ~30 minutes.
+      - name: Wait for release artifacts to be published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p artifacts
+          deadline=$(( $(date +%s) + 1800 ))
+          while :; do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+                 --jq '.assets[].name' 2>/dev/null | grep -qx 'SHA256SUMS'; then
+              echo "SHA256SUMS present on release $TAG"
+              break
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Timed out waiting for SHA256SUMS on release $TAG"
+              exit 1
+            fi
+            echo "Waiting for release $TAG to publish SHA256SUMS..."
+            sleep 30
+          done
+
+      - name: Download SHA256SUMS from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -eu
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'SHA256SUMS' --dir artifacts --clobber
+          echo "--- SHA256SUMS ---"
+          cat artifacts/SHA256SUMS
+
+      - name: Extract per-tarball SHA-256
+        id: sums
+        shell: bash
+        run: |
+          set -eu
+          extract() {
+            local asset="$1"
+            local hash
+            hash="$(awk -v f="$asset" '$2==f{print $1; exit}' artifacts/SHA256SUMS)"
+            if [ -z "$hash" ]; then
+              echo "::error::Missing $asset in SHA256SUMS"
+              exit 1
+            fi
+            printf '%s' "$hash"
+          }
+          DARWIN_ARM64="$(extract 'localcode-darwin-arm64.tar.gz')"
+          DARWIN_X64="$(extract 'localcode-darwin-x64.tar.gz')"
+          LINUX_ARM64="$(extract 'localcode-linux-arm64.tar.gz')"
+          LINUX_X64="$(extract 'localcode-linux-x64.tar.gz')"
+          echo "darwin_arm64=$DARWIN_ARM64" >>"$GITHUB_OUTPUT"
+          echo "darwin_x64=$DARWIN_X64"     >>"$GITHUB_OUTPUT"
+          echo "linux_arm64=$LINUX_ARM64"   >>"$GITHUB_OUTPUT"
+          echo "linux_x64=$LINUX_X64"       >>"$GITHUB_OUTPUT"
+          echo "Resolved SHAs:"
+          echo "  darwin-arm64 = $DARWIN_ARM64"
+          echo "  darwin-x64   = $DARWIN_X64"
+          echo "  linux-arm64  = $LINUX_ARM64"
+          echo "  linux-x64    = $LINUX_X64"
+
+      - name: Render formula from template
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA_DARWIN_ARM64: ${{ steps.sums.outputs.darwin_arm64 }}
+          SHA_DARWIN_X64: ${{ steps.sums.outputs.darwin_x64 }}
+          SHA_LINUX_ARM64: ${{ steps.sums.outputs.linux_arm64 }}
+          SHA_LINUX_X64: ${{ steps.sums.outputs.linux_x64 }}
+        run: |
+          set -eu
+          mkdir -p rendered
+          # sed with `|` delimiter avoids quoting issues with slashes in URLs.
+          sed \
+            -e "s|__VERSION__|${VERSION}|g" \
+            -e "s|__SHA256_DARWIN_ARM64__|${SHA_DARWIN_ARM64}|g" \
+            -e "s|__SHA256_DARWIN_X64__|${SHA_DARWIN_X64}|g" \
+            -e "s|__SHA256_LINUX_ARM64__|${SHA_LINUX_ARM64}|g" \
+            -e "s|__SHA256_LINUX_X64__|${SHA_LINUX_X64}|g" \
+            dist/homebrew/localcode.rb > rendered/localcode.rb
+          echo "--- Rendered formula ---"
+          cat rendered/localcode.rb
+          # Sanity: no leftover placeholders.
+          if grep -q '__VERSION__\|__SHA256_' rendered/localcode.rb; then
+            echo "::error::Rendered formula still contains placeholders"
+            exit 1
+          fi
+
+      - name: Checkout tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: grosa787/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_PAT }}
+          path: tap
+          fetch-depth: 1
+
+      - name: Copy rendered formula into tap repo
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p tap/Formula
+          cp rendered/localcode.rb tap/Formula/localcode.rb
+          ls -la tap/Formula/
+
+      - name: Commit and push to tap
+        shell: bash
+        working-directory: tap
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -eu
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add Formula/localcode.rb
+          if git diff --cached --quiet; then
+            echo "No changes to push — formula already up to date for $TAG."
+            exit 0
+          fi
+          git commit -m "localcode ${VERSION}"
+          git push origin HEAD

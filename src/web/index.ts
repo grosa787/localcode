@@ -77,6 +77,9 @@ import {
   buildMcpToolHandlerMap,
   buildMcpToolSchema,
 } from '@/tools/mcp-tool';
+// SANDBOX-WIRING-SECTION (imports)
+import type { SandboxRuntimeConfig } from '@/tools/sandbox/types';
+// SANDBOX-WIRING-SECTION (imports end)
 
 import { MemoryStore, type MemoryEntry } from '@/memory';
 import { renderMemorySection } from '@/llm/memory-prompt';
@@ -90,6 +93,59 @@ import chokidar from 'chokidar';
 // static table.
 import { refreshOpenRouterPricing } from '@/llm/pricing/openrouter-pricing';
 // PRICING-REFRESH-SECTION-END
+
+// SANDBOX-WIRING-SECTION (helper)
+/**
+ * Narrow the optional `[sandbox]` block off an AppConfig-like object
+ * into the `SandboxRuntimeConfig` shape `run_command` consumes. Mirror
+ * of `readSandboxConfig` in `src/app.tsx`. Returns `undefined` when
+ * the user has not opted in (the tool then falls back to its built-in
+ * defaults — `backend='auto'`, `allowNetwork=true`).
+ */
+function readWebSandboxConfig(cfg: unknown): SandboxRuntimeConfig | undefined {
+  if (cfg === null || typeof cfg !== 'object') return undefined;
+  const sb = (cfg as { sandbox?: unknown }).sandbox;
+  if (sb === undefined || sb === null || typeof sb !== 'object') return undefined;
+  const obj = sb as Record<string, unknown>;
+  const backend = obj['backend'];
+  const allowNetwork = obj['allowNetwork'];
+  const allowWritePaths = obj['allowWritePaths'];
+  const timeoutMs = obj['timeoutMs'];
+  if (
+    typeof backend !== 'string' ||
+    typeof allowNetwork !== 'boolean' ||
+    !Array.isArray(allowWritePaths) ||
+    typeof timeoutMs !== 'number'
+  ) {
+    return undefined;
+  }
+  const validBackends: readonly SandboxRuntimeConfig['backend'][] = [
+    'auto',
+    'sandbox-exec',
+    'firejail',
+    'docker',
+    'none',
+  ];
+  if (!validBackends.includes(backend as SandboxRuntimeConfig['backend'])) {
+    return undefined;
+  }
+  const writePaths: string[] = [];
+  for (const p of allowWritePaths) {
+    if (typeof p === 'string') writePaths.push(p);
+  }
+  const out: SandboxRuntimeConfig = {
+    backend: backend as SandboxRuntimeConfig['backend'],
+    allowNetwork,
+    allowWritePaths: writePaths,
+    timeoutMs,
+  };
+  const dockerImage = obj['dockerImage'];
+  if (typeof dockerImage === 'string' && dockerImage.length > 0) {
+    out.dockerImage = dockerImage;
+  }
+  return out;
+}
+// SANDBOX-WIRING-SECTION (helper end)
 
 /**
  * Resolve the LOCALCODE.md hierarchy (project root → $HOME, plus global
@@ -642,6 +698,18 @@ export async function startWebApp(
       ontology: getProcessOntologyIndexer(projectRoot) ?? undefined,
       // ONTOLOGY-WIRE-SECTION-END
     };
+    // SANDBOX-WIRING-SECTION — push the user's `[sandbox]` TOML
+    // preferences into the run_command tool ctx (mirror of the TUI
+    // wiring in src/app.tsx). When unset, the tool falls back to its
+    // built-in defaults (backend='auto', allowNetwork=true) so legacy
+    // hosts keep their pre-sandbox behaviour.
+    const sandboxConfigForCtx = readWebSandboxConfig(config);
+    if (sandboxConfigForCtx !== undefined) {
+      (toolCtx as AgentToolContext & {
+        sandboxConfig?: SandboxRuntimeConfig;
+      }).sandboxConfig = sandboxConfigForCtx;
+    }
+    // SANDBOX-WIRING-SECTION-END
     const handlerMap = createToolHandlerMap(toolCtx);
     const flatHandlers: FlatToolHandlerMap = {};
     for (const [name, handler] of Object.entries(handlerMap)) {
