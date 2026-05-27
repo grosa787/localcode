@@ -133,8 +133,14 @@ beforeAll(() => {
   process.env['FORCE_COLOR'] = '0';
 });
 
+// Helper: give ink a tick to flush stdout before reading. CI runners
+// (especially macOS-13) are slow enough that an immediate read can
+// catch only the cursor-hide escape (`[?25l`) before the actual
+// frame is written. 200 ms is conservative but cheap.
+const flushInk = () => new Promise<void>((r) => setTimeout(r, 200));
+
 describe('AgentPanel — render shape with 3 workers', () => {
-  test('renders lead row + 3 worker rows', () => {
+  test('renders lead row + 3 worker rows', async () => {
     const m = mountPanel({
       workers: FIXTURE_3,
       leadModel: 'gpt-5',
@@ -144,6 +150,7 @@ describe('AgentPanel — render shape with 3 workers', () => {
       showHistory: true,
       // /AGENT-LIFECYCLE-SECTION
     });
+    await flushInk();
     const out = m.read();
     expect(out).toContain('lead');
     expect(out).toContain('gpt-5');
@@ -155,13 +162,14 @@ describe('AgentPanel — render shape with 3 workers', () => {
     m.unmount();
   });
 
-  test('focused panel shows the selection arrow on the selected row', () => {
+  test('focused panel shows the selection arrow on the selected row', async () => {
     const m = mountPanel({
       workers: FIXTURE_3,
       leadModel: 'gpt-5',
       focused: true,
       selectedIdx: 1,
     });
+    await flushInk();
     const out = m.read();
     // The selected row's prefix is `▶`; unselected use `▎`.
     expect(out).toContain('▶');
@@ -171,19 +179,20 @@ describe('AgentPanel — render shape with 3 workers', () => {
     m.unmount();
   });
 
-  test('unfocused panel hides the selection chrome', () => {
+  test('unfocused panel hides the selection chrome', async () => {
     const m = mountPanel({
       workers: FIXTURE_3,
       leadModel: 'gpt-5',
       focused: false,
       selectedIdx: 1,
     });
+    await flushInk();
     const out = m.read();
     expect(out).not.toContain('▶');
     m.unmount();
   });
 
-  test('currentConversant = worker id renders the attached marker', () => {
+  test('currentConversant = worker id renders the attached marker', async () => {
     const m = mountPanel({
       workers: FIXTURE_3,
       leadModel: 'gpt-5',
@@ -193,17 +202,19 @@ describe('AgentPanel — render shape with 3 workers', () => {
       showHistory: true,
       // /AGENT-LIFECYCLE-SECTION
     });
+    await flushInk();
     const out = m.read();
     expect(out).toContain('→ active');
     m.unmount();
   });
 
-  test('narrow terminal (<60 cols) drops the lastMessage preview', () => {
+  test('narrow terminal (<60 cols) drops the lastMessage preview', async () => {
     const m = mountPanel({
       workers: FIXTURE_3,
       leadModel: 'gpt-5',
       columns: 50,
     });
+    await flushInk();
     const out = m.read();
     expect(out).not.toContain('investigating crash');
     m.unmount();
@@ -212,11 +223,12 @@ describe('AgentPanel — render shape with 3 workers', () => {
 
 // AGENT-LIFECYCLE-SECTION
 describe('AgentPanel — showHistory filter', () => {
-  test('default (showHistory undefined) hides terminated workers', () => {
+  test('default (showHistory undefined) hides terminated workers', async () => {
     const m = mountPanel({
       workers: FIXTURE_3,
       leadModel: 'gpt-5',
     });
+    await flushInk();
     const out = m.read();
     // Running row is visible.
     expect(out).toContain('a1');
@@ -226,12 +238,13 @@ describe('AgentPanel — showHistory filter', () => {
     m.unmount();
   });
 
-  test('showHistory=true surfaces every status', () => {
+  test('showHistory=true surfaces every status', async () => {
     const m = mountPanel({
       workers: FIXTURE_3,
       leadModel: 'gpt-5',
       showHistory: true,
     });
+    await flushInk();
     const out = m.read();
     expect(out).toContain('a1');
     expect(out).toContain('b2');
