@@ -14,7 +14,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: build the JS bundle (CLI + embedded web SPA).
 # ---------------------------------------------------------------------------
-FROM oven/bun:1.1-alpine AS builder
+FROM oven/bun:1.3-alpine AS builder
 
 WORKDIR /build
 
@@ -37,7 +37,7 @@ RUN bun run build && test -f dist/cli.js
 # ---------------------------------------------------------------------------
 # Stage 2: runtime — Bun runtime + bundle only. No node_modules, no source.
 # ---------------------------------------------------------------------------
-FROM oven/bun:1.1-alpine
+FROM oven/bun:1.3-alpine
 
 LABEL org.opencontainers.image.title="LocalCode" \
       org.opencontainers.image.description="Local-first AI coding assistant" \
