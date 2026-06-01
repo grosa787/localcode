@@ -48,7 +48,8 @@ import {
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import { z, type ZodError } from 'zod';
 import { ConfigSchema, type Config, type DeepPartial } from './types';
-import type { GenerationConfig } from '@/types/global';
+import { getDefaultConfig } from './defaults';
+import type { GenerationConfig, Backend } from '@/types/global';
 // PROJECT-RC-SECTION — `.localcoderc.toml` loader, walks the dir tree
 // upward and deep-merges allowed overrides on top of the global config.
 import { loadProjectRc, deepMergePartial } from './project-rc';
@@ -238,6 +239,43 @@ export class ConfigManager {
       );
     }
     return result.data;
+  }
+
+  /**
+   * Read the config, AUTO-CREATING a default file when it is MISSING.
+   *
+   * This is the self-healing entry point for startup paths that must
+   * have *some* config to proceed (e.g. the app's bootstrap effect on a
+   * fresh machine where `~/.localcode/config.toml` does not exist yet).
+   * The written default has `onboarding.completed = false` and no
+   * `locale`, so the caller still routes the user through the language
+   * picker + onboarding — auto-creation prevents the hard "cannot read
+   * config.toml" crash without skipping first-run setup.
+   *
+   * IMPORTANT: this ONLY creates on a genuinely absent file. A file
+   * that EXISTS but is corrupt / invalid still throws (via `read()`),
+   * preserving the invariant that we never silently clobber a user's
+   * hand-edited-but-broken config — repairing that is onboarding's /
+   * `update()`'s job, which the caller can fall back to explicitly.
+   *
+   * If the default cannot be persisted (e.g. a read-only HOME), the
+   * in-memory defaults are still returned so the app can boot; the next
+   * `write` / `update` will surface the write failure to the user.
+   */
+  readOrCreate(defaultBackend: Backend = 'ollama'): Config {
+    if (this.exists()) {
+      // File present → read normally. Corrupt/invalid files throw here
+      // (never auto-overwritten); only a missing file is auto-created.
+      return this.read();
+    }
+    const defaults = getDefaultConfig(defaultBackend);
+    try {
+      this.write(defaults);
+    } catch {
+      // Best-effort persist — return in-memory defaults regardless so a
+      // read-only HOME doesn't block startup.
+    }
+    return defaults;
   }
 
   /**

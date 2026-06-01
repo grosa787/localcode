@@ -2044,9 +2044,24 @@ function App(props: AppProps): React.JSX.Element {
     // LANGUAGE-PICKER-MOUNT-SECTION — skip config load during picker.
     if (screen === 'languagePicker') return;
     // LANGUAGE-PICKER-MOUNT-SECTION-END
+    // CONFIG-SELFHEAL-SECTION — on a fresh machine the very first screen
+    // is the animated splash; the config file does not exist yet and is
+    // only written when onboarding completes. Reading it here would
+    // throw "cannot read config.toml" and latch a config-load error that
+    // surfaces later on the chat screen. Skip the read entirely during
+    // splash (mirrors the onboarding/languagePicker guards above) — the
+    // splash → languagePicker → onboarding flow writes the config, and
+    // this effect re-runs once we actually reach chat.
+    if (screen === 'splash') return;
+    // CONFIG-SELFHEAL-SECTION-END
     if (config !== null) return;
     try {
-      let loaded = configManager.read();
+      // readOrCreate (not read): if we somehow reach a real screen with
+      // no config on disk, auto-create the defaults instead of crashing.
+      // The default has onboarding.completed=false + no locale, so the
+      // branches below still route through the language picker /
+      // onboarding rather than dropping the user into a half-set-up chat.
+      let loaded = configManager.readOrCreate();
       // Permission profile override (from `--profile <name>` or the
       // legacy `--dangerously-allow-all` flag). Persisted via update()
       // so subsequent reads see the override and so the executor's

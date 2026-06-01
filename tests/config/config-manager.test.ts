@@ -169,3 +169,57 @@ describe('security H2 — config file mode is 0600 after write', () => {
     expect(mode).toBe(0o600);
   });
 });
+
+describe('ConfigManager.readOrCreate (self-healing auto-create)', () => {
+  test('missing file → writes defaults and returns them', () => {
+    const mgr = new ConfigManager(configPath);
+    expect(mgr.exists()).toBe(false);
+
+    const cfg = mgr.readOrCreate();
+
+    // File is now created on disk...
+    expect(mgr.exists()).toBe(true);
+    // ...and the returned defaults route the user back through
+    // onboarding (NOT straight into a half-set-up chat).
+    expect(cfg.onboarding.completed).toBe(false);
+    expect(cfg.locale).toBeUndefined();
+    // What was written is a valid, re-readable config.
+    expect(mgr.read()).toEqual(cfg);
+  });
+
+  test('missing file → honors the requested default backend', () => {
+    const mgr = new ConfigManager(configPath);
+    const cfg = mgr.readOrCreate('openai');
+    expect(cfg.backend.type).toBe('openai');
+  });
+
+  test('existing valid file → returns it unchanged (no clobber)', () => {
+    const mgr = new ConfigManager(configPath);
+    const original = getDefaultConfig('anthropic');
+    original.model.current = 'claude-x';
+    original.model.available = ['claude-x'];
+    original.onboarding.completed = true;
+    mgr.write(original);
+
+    const cfg = mgr.readOrCreate();
+    // The user's completed config is preserved, not overwritten with
+    // fresh defaults.
+    expect(cfg.model.current).toBe('claude-x');
+    expect(cfg.onboarding.completed).toBe(true);
+    expect(cfg.backend.type).toBe('anthropic');
+  });
+
+  test('existing CORRUPT file → throws (never silently overwrites)', async () => {
+    await fsWriteFile(configPath, 'this is = = not valid toml [[[', 'utf8');
+    const mgr = new ConfigManager(configPath);
+    let caught: unknown = null;
+    try {
+      mgr.readOrCreate();
+    } catch (e) {
+      caught = e;
+    }
+    // A present-but-broken file is the user's to repair (onboarding /
+    // update) — readOrCreate must NOT clobber it with defaults.
+    expect(caught).toBeInstanceOf(ConfigReadError);
+  });
+});

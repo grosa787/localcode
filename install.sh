@@ -15,7 +15,10 @@
 #   5. Symlink dist/cli.js into a PATH directory:
 #        - first try $HOME/.local/bin/localcode (no sudo, preferred);
 #        - fall back to /usr/local/bin/localcode (sudo, explained first).
-#   6. Print success + PATH hint if $HOME/.local/bin is not on PATH.
+#   6. Make `localcode` resolve everywhere with no manual step: add the
+#      bin dir to every shell rc (zsh/bash/profile/fish) for future
+#      shells, and best-effort link into /usr/local/bin (no-prompt sudo)
+#      so it also works in the current shell.
 #
 # Flags:
 #   --uninstall          remove the symlink and the install dir.
@@ -352,6 +355,74 @@ path_contains() {
   esac
 }
 
+# Idempotently ensure $1 (a bin dir) is exported onto PATH in every shell
+# the user might open, so `localcode` resolves in FUTURE sessions with no
+# manual step. Touches the common POSIX/zsh/bash rc files plus fish; each
+# file is edited at most once (guarded by a grep for the dir).
+ensure_on_path() {
+  bindir="$1"
+  line="export PATH=\"$bindir:\$PATH\""
+  marker="# added by LocalCode installer (https://github.com/grosa787/localcode)"
+  RC_UPDATED=""
+
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+    [ -e "$rc" ] || continue
+    # Skip if the dir is already referenced anywhere in the file.
+    if grep -qsF "$bindir" "$rc"; then continue; fi
+    if printf '\n%s\n%s\n' "$marker" "$line" >> "$rc" 2>/dev/null; then
+      RC_UPDATED="$RC_UPDATED $rc"
+    fi
+  done
+
+  # zsh is the macOS default shell, but a fresh account may have no
+  # ~/.zshrc yet — create it so the export still lands for new shells.
+  if [ ! -e "$HOME/.zshrc" ] && have zsh; then
+    if printf '%s\n%s\n' "$marker" "$line" > "$HOME/.zshrc" 2>/dev/null; then
+      RC_UPDATED="$RC_UPDATED $HOME/.zshrc"
+    fi
+  fi
+  # Lowest-common-denominator login file when nothing else was touched.
+  if [ -z "$RC_UPDATED" ] && [ ! -e "$HOME/.profile" ]; then
+    if printf '%s\n%s\n' "$marker" "$line" > "$HOME/.profile" 2>/dev/null; then
+      RC_UPDATED="$RC_UPDATED $HOME/.profile"
+    fi
+  fi
+
+  # fish keeps PATH in its own conf.d dir; fish_add_path is idempotent.
+  if have fish; then
+    fish_conf="$HOME/.config/fish/conf.d/localcode.fish"
+    mkdir -p "$(dirname "$fish_conf")" 2>/dev/null || true
+    if printf '# added by LocalCode installer\nif test -d %s\n    fish_add_path %s\nend\n' \
+        "$bindir" "$bindir" > "$fish_conf" 2>/dev/null; then
+      RC_UPDATED="$RC_UPDATED $fish_conf"
+    fi
+  fi
+}
+
+# Best-effort: ALSO expose the binary in a system dir already on PATH
+# everywhere (/usr/local/bin), so `localcode` works in the CURRENT,
+# already-open shell — not just future ones. Never blocks the install:
+# uses sudo only when it won't prompt (cached creds); silently skips
+# otherwise. Safe to call after the primary ~/.local/bin link.
+ensure_system_symlink() {
+  target="$1"
+  syslink="$FALLBACK_BIN_DIR/localcode"
+  # Already the primary link target → nothing to do.
+  [ "${LINKED_AT:-}" = "$syslink" ] && return 0
+  if [ -d "$FALLBACK_BIN_DIR" ] && [ -w "$FALLBACK_BIN_DIR" ]; then
+    if ln -sf "$target" "$syslink" 2>/dev/null; then
+      SYS_LINKED="$syslink"
+      return 0
+    fi
+  fi
+  if have sudo && sudo -n true 2>/dev/null; then
+    if sudo ln -sf "$target" "$syslink" 2>/dev/null; then
+      SYS_LINKED="$syslink"
+    fi
+  fi
+  return 0
+}
+
 install_symlink() {
   # Prefer the native binary placed by install_prebuilt; fall back to the
   # bundled cli.js from source-build mode.
@@ -362,10 +433,14 @@ install_symlink() {
     log "linking $target -> $link"
     ln -sf "$target" "$link"
     LINKED_AT="$link"
+    # Make `localcode` resolve everywhere with no manual step:
+    #   - future shells: append the bin dir to every shell rc file.
+    #   - the current shell: also link into /usr/local/bin (already on
+    #     PATH) when we can do so without prompting for sudo.
     if ! path_contains "$LOCALCODE_BIN_DIR"; then
-      PATH_HINT="$LOCALCODE_BIN_DIR is not on your PATH yet. Add this to your shell rc:
-    export PATH=\"$LOCALCODE_BIN_DIR:\$PATH\""
+      ensure_on_path "$LOCALCODE_BIN_DIR"
     fi
+    ensure_system_symlink "$target"
     return 0
   fi
   # 2) fall back to /usr/local/bin via sudo
@@ -470,13 +545,24 @@ main() {
   install_symlink
 
   log "LocalCode installed at $LINKED_AT"
-  echo ""
-  echo "  Run: localcode"
-  echo ""
-  if [ -n "${PATH_HINT:-}" ]; then
-    printf '%s\n' "$PATH_HINT"
-    echo ""
+  if [ -n "${SYS_LINKED:-}" ]; then
+    log "also linked at $SYS_LINKED (on PATH for every shell)"
   fi
+  if [ -n "${RC_UPDATED:-}" ]; then
+    log "added $LOCALCODE_BIN_DIR to PATH in:$RC_UPDATED"
+  fi
+  echo ""
+  if [ -n "${SYS_LINKED:-}" ] || path_contains "$LOCALCODE_BIN_DIR"; then
+    # Resolvable in the CURRENT shell right now.
+    echo "  Run: localcode"
+  else
+    # rc files were updated → works in any NEW shell. Offer a one-liner
+    # so the user doesn't even have to open a new terminal.
+    echo "  Run: localcode    (in a new terminal)"
+    echo "  Or activate it in this shell now:"
+    echo "      export PATH=\"$LOCALCODE_BIN_DIR:\$PATH\""
+  fi
+  echo ""
   echo "  Re-run this installer any time to update."
   echo "  Uninstall with: $0 --uninstall"
 }
