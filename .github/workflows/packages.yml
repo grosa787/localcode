@@ -128,8 +128,22 @@ jobs:
         run: |
           set -eu
           mkdir -p out
+          # nfpm does not reliably expand ${VAR} inside contents[].src
+          # (the src glob receives the literal "${PKG_BIN}" and fails with
+          # "glob failed: no matching files"). Render the config with the
+          # shell first via envsubst, restricted to exactly our three vars
+          # so no other "$" in the YAML is touched. envsubst ships in
+          # gettext-base (preinstalled on ubuntu runners; install as a
+          # fallback just in case).
+          if ! command -v envsubst >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y gettext-base
+          fi
+          envsubst '${PKG_VERSION} ${PKG_ARCH} ${PKG_BIN}' \
+            < packaging/nfpm.yaml > /tmp/nfpm.rendered.yaml
+          echo "--- rendered nfpm config (key fields) ---"
+          grep -E 'version:|arch:|src:' /tmp/nfpm.rendered.yaml
           nfpm package \
-            --config packaging/nfpm.yaml \
+            --config /tmp/nfpm.rendered.yaml \
             --packager "${{ matrix.format }}" \
             --target "out/"
           ls -la out/
