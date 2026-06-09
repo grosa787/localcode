@@ -16,6 +16,7 @@ import { Writable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { render } from 'ink';
 
+import { settleFrame } from './_settle';
 import OnboardingScreen from '@/ui/screens/OnboardingScreen';
 import { LocaleProvider, setActiveLocale } from '@/i18n';
 
@@ -106,8 +107,7 @@ describe('OnboardingScreen + LocaleProvider', () => {
     const view = mountOnboarding('ru');
     try {
       // Give ink a tick to flush.
-      await new Promise((r) => setTimeout(r, 200));
-      const frame = view.read();
+      const frame = await settleFrame(() => view.read());
       expect(frame.includes('Добро пожаловать')).toBe(true);
       expect(frame.includes('перемещение')).toBe(true);
       expect(frame.includes('Pick the LLM backend')).toBe(false);
@@ -120,8 +120,7 @@ describe('OnboardingScreen + LocaleProvider', () => {
   test('renders English copy when locale is en', async () => {
     const view = mountOnboarding('en');
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const frame = view.read();
+      const frame = await settleFrame(() => view.read());
       expect(frame.includes('Pick the LLM backend')).toBe(true);
       expect(frame.includes('navigate · Enter to select')).toBe(true);
     } finally {

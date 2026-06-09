@@ -21,6 +21,7 @@ import React from 'react';
 import { Writable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { render } from 'ink';
+import { settleFrame } from './_settle';
 import { AgentPanel, type AgentRow } from '@/ui/components/AgentPanel';
 import {
   chatReducer,
@@ -137,7 +138,7 @@ beforeAll(() => {
 // (especially macOS-13) are slow enough that an immediate read can
 // catch only the cursor-hide escape (`[?25l`) before the actual
 // frame is written. 200 ms is conservative but cheap.
-const flushInk = () => new Promise<void>((r) => setTimeout(r, 200));
+const flushInk = (read: () => string): Promise<string> => settleFrame(read);
 
 describe('AgentPanel — render shape with 3 workers', () => {
   test('renders lead row + 3 worker rows', async () => {
@@ -150,8 +151,7 @@ describe('AgentPanel — render shape with 3 workers', () => {
       showHistory: true,
       // /AGENT-LIFECYCLE-SECTION
     });
-    await flushInk();
-    const out = m.read();
+    const out = await flushInk(() => m.read());
     expect(out).toContain('lead');
     expect(out).toContain('gpt-5');
     // Every worker id appears in the rendered output.
@@ -169,8 +169,7 @@ describe('AgentPanel — render shape with 3 workers', () => {
       focused: true,
       selectedIdx: 1,
     });
-    await flushInk();
-    const out = m.read();
+    const out = await flushInk(() => m.read());
     // The selected row's prefix is `▶`; unselected use `▎`.
     expect(out).toContain('▶');
     // Help line only renders when focused.
@@ -186,8 +185,7 @@ describe('AgentPanel — render shape with 3 workers', () => {
       focused: false,
       selectedIdx: 1,
     });
-    await flushInk();
-    const out = m.read();
+    const out = await flushInk(() => m.read());
     expect(out).not.toContain('▶');
     m.unmount();
   });
@@ -202,8 +200,7 @@ describe('AgentPanel — render shape with 3 workers', () => {
       showHistory: true,
       // /AGENT-LIFECYCLE-SECTION
     });
-    await flushInk();
-    const out = m.read();
+    const out = await flushInk(() => m.read());
     expect(out).toContain('→ active');
     m.unmount();
   });
@@ -214,8 +211,7 @@ describe('AgentPanel — render shape with 3 workers', () => {
       leadModel: 'gpt-5',
       columns: 50,
     });
-    await flushInk();
-    const out = m.read();
+    const out = await flushInk(() => m.read());
     expect(out).not.toContain('investigating crash');
     m.unmount();
   });
@@ -228,8 +224,7 @@ describe('AgentPanel — showHistory filter', () => {
       workers: FIXTURE_3,
       leadModel: 'gpt-5',
     });
-    await flushInk();
-    const out = m.read();
+    const out = await flushInk(() => m.read());
     // Running row is visible.
     expect(out).toContain('a1');
     // Terminated rows (done b2, failed c3) are hidden.
@@ -244,8 +239,7 @@ describe('AgentPanel — showHistory filter', () => {
       leadModel: 'gpt-5',
       showHistory: true,
     });
-    await flushInk();
-    const out = m.read();
+    const out = await flushInk(() => m.read());
     expect(out).toContain('a1');
     expect(out).toContain('b2');
     expect(out).toContain('c3');

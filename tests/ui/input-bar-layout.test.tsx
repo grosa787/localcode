@@ -20,6 +20,7 @@ import React from 'react';
 import { Writable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { render } from 'ink';
+import { settleFrame } from './_settle';
 import InputBar, { __test__ as inputBarTest } from '@/ui/components/InputBar';
 
 const { pickPillLayout } = inputBarTest;
@@ -156,8 +157,7 @@ describe('InputBar — pill row rendering at various widths', () => {
   test('120 cols → full pill shows provider, model, profile, outputStyle', async () => {
     const bar = mountBar({ testColumns: 120, status: STATUS });
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const out = bar.read();
+      const out = await settleFrame(() => bar.read());
       expect(out).toContain('openrouter');
       expect(out).toContain('qwen3-coder');
       expect(out).toContain('35%');
@@ -171,8 +171,7 @@ describe('InputBar — pill row rendering at various widths', () => {
   test('60 cols → compact pill drops provider / profile / outputStyle', async () => {
     const bar = mountBar({ testColumns: 60, status: STATUS });
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const out = bar.read();
+      const out = await settleFrame(() => bar.read());
       expect(out).toContain('qwen3-coder');
       expect(out).toContain('35%');
       // The dropped segments should not appear in the compact form.
@@ -186,8 +185,7 @@ describe('InputBar — pill row rendering at various widths', () => {
   test('30 cols → minimal mode hides the whole pill row', async () => {
     const bar = mountBar({ testColumns: 30, status: STATUS });
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const out = bar.read();
+      const out = await settleFrame(() => bar.read());
       // The pill body opens with `[ ` and closes with ` ]`; the minimal
       // mode must omit both.
       expect(out).not.toContain('[ ');
@@ -200,8 +198,7 @@ describe('InputBar — pill row rendering at various widths', () => {
   test('legacy callers (no `status` prop) render without a pill row', async () => {
     const bar = mountBar({ testColumns: 120 });
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const out = bar.read();
+      const out = await settleFrame(() => bar.read());
       // No status payload → no pill row at all (legacy compatibility).
       expect(out).not.toContain('openrouter');
       expect(out).not.toContain('35%');
@@ -215,8 +212,7 @@ describe('InputBar — footer hint row', () => {
   test('120 cols → full hint row visible (↵ send · ⇧↵ newline …)', async () => {
     const bar = mountBar({ testColumns: 120 });
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const out = bar.read();
+      const out = await settleFrame(() => bar.read());
       // `↵` and `⇧↵` glyphs identify the row uniquely.
       expect(out).toContain('↵ send');
       expect(out).toContain('⇧↵ newline');
@@ -229,8 +225,7 @@ describe('InputBar — footer hint row', () => {
   test('60 cols → hint row collapses (drops `! bash` and `⇥ agent`)', async () => {
     const bar = mountBar({ testColumns: 60 });
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const out = bar.read();
+      const out = await settleFrame(() => bar.read());
       expect(out).toContain('↵ send');
       expect(out).not.toContain('! bash');
       expect(out).not.toContain('⇥ agent');
@@ -242,8 +237,7 @@ describe('InputBar — footer hint row', () => {
   test('30 cols → hint row hidden in minimal mode', async () => {
     const bar = mountBar({ testColumns: 30 });
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const out = bar.read();
+      const out = await settleFrame(() => bar.read());
       expect(out).not.toContain('↵ send');
     } finally {
       bar.unmount();
@@ -253,8 +247,7 @@ describe('InputBar — footer hint row', () => {
   test('showHint=false suppresses the hint row entirely', async () => {
     const bar = mountBar({ testColumns: 120, showHint: false });
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const out = bar.read();
+      const out = await settleFrame(() => bar.read());
       expect(out).not.toContain('↵ send');
     } finally {
       bar.unmount();
