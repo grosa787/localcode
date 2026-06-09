@@ -403,6 +403,22 @@ export interface AppConfig {
    */
   migration?: MigrationConfig;
   // IMPORT-FIRST-RUN-SECTION-END
+
+  // INFERENCE-CONFIG-SECTION
+  /**
+   * Local-first constrained-decoding controls (Wave 16B). Only effective
+   * on local OpenAI-compatible backends (llama.cpp / LM Studio / Ollama)
+   * that expose GBNF `grammar` + raw `logit_bias` — cloud APIs ignore it.
+   * Optional; absence yields `{ grammarLock: 'auto', logitBanlist: 'auto' }`
+   * via Zod. Mirrors `InferenceSchema` in `src/config/types.ts`.
+   *
+   *   - `grammarLock`  — `'auto'|'on'|'off'`. `'auto'` defers to the
+   *     capability probe. Attaches a GBNF tool-call grammar per request.
+   *   - `logitBanlist` — `'auto'|'on'|'off'`. Biases the decoder toward
+   *     in-scope TypeScript symbols. TS/TSX-only; no-op elsewhere.
+   */
+  inference?: InferenceConfig;
+  // INFERENCE-CONFIG-SECTION-END
 }
 
 // TELEMETRY-CONFIG-SECTION
@@ -429,6 +445,26 @@ export interface MigrationConfig {
   claudeCodeDismissed: boolean;
 }
 // IMPORT-FIRST-RUN-SECTION-END
+
+// INFERENCE-CONFIG-SECTION
+/**
+ * Inference mode for a constrained-decoding knob. `'auto'` defers to the
+ * capability probe; `'on'` requests it (probe still gates the attach);
+ * `'off'` disables. Mirrors `InferenceModeSchema` in
+ * `src/config/types.ts`.
+ */
+export type InferenceMode = 'auto' | 'on' | 'off';
+
+/**
+ * Local-first constrained-decoding controls. Mirrors `InferenceSchema`
+ * in `src/config/types.ts`. Required on the type; Zod fills the defaults
+ * at parse time.
+ */
+export interface InferenceConfig {
+  grammarLock: InferenceMode;
+  logitBanlist: InferenceMode;
+}
+// INFERENCE-CONFIG-SECTION-END
 
 // FIRST-RUN-CONFIG-SECTION
 /**

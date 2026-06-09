@@ -785,6 +785,39 @@ export const MigrationSchema = z
 export type MigrationConfig = z.infer<typeof MigrationSchema>;
 // IMPORT-FIRST-RUN-SECTION-END ----------------------------------------
 
+// INFERENCE-CONFIG-SECTION --------------------------------------------
+//
+// Wave 16B — local-first constrained-decoding controls. These knobs only
+// have teeth on LOCAL OpenAI-compatible backends (llama.cpp / LM Studio /
+// Ollama) which expose GBNF `grammar` + raw `logit_bias` — cloud APIs do
+// not. Cloud backends ignore the section entirely.
+//
+//   - `grammarLock`  — attach a GBNF tool-call grammar to the per-request
+//     body so the local decoder can only emit a valid call to a real
+//     tool. `'auto'` (default) defers to the capability probe; `'on'`
+//     forces it (probe still gates the actual attach); `'off'` disables.
+//   - `logitBanlist` — bias the decoder toward in-scope TypeScript
+//     symbols (and optionally away from deprecated names). TS/TSX-only;
+//     no-op on other languages. `'auto'` defers to the probe.
+//
+// Whole section optional at the typed root so old TOMLs round-trip
+// cleanly; Zod fills `{ grammarLock: 'auto', logitBanlist: 'auto' }`.
+export const InferenceModeSchema = z.enum(['auto', 'on', 'off']);
+export type InferenceMode = z.infer<typeof InferenceModeSchema>;
+
+export const InferenceSchema = z
+  .object({
+    grammarLock: InferenceModeSchema.default('auto'),
+    logitBanlist: InferenceModeSchema.default('auto'),
+  })
+  .default({
+    grammarLock: 'auto',
+    logitBanlist: 'auto',
+  });
+
+export type InferenceConfig = z.infer<typeof InferenceSchema>;
+// INFERENCE-CONFIG-SECTION-END ----------------------------------------
+
 // ---------- Root schema ----------
 
 export const ConfigSchema = z.object({
@@ -869,6 +902,11 @@ export const ConfigSchema = z.object({
   // Optional; absence yields the safe default (not dismissed).
   migration: MigrationSchema.optional(),
   // IMPORT-FIRST-RUN-SECTION-END
+  // INFERENCE-CONFIG-SECTION — local-first constrained-decoding controls
+  // (grammar lock + logit banlist). Optional; absence yields the
+  // 'auto'/'auto' defaults via the schema's own `.default(...)`.
+  inference: InferenceSchema.optional(),
+  // INFERENCE-CONFIG-SECTION-END
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

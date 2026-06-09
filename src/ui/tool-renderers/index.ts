@@ -22,6 +22,8 @@ import { render as renderGrepSearch } from './grep-search.js';
 import { render as renderWebFetch } from './web-fetch.js';
 import { render as renderWebSearch } from './web-search.js';
 import { render as renderEditFile } from './edit-file.js';
+// INLINE-IMAGE-SECTION — Wave 16C: render fetched images inline.
+import { render as renderFetchImage } from './fetch-image.js';
 
 /**
  * Frozen lookup table. Key is the canonical tool name as the executor
@@ -42,6 +44,9 @@ export const TOOL_RENDERERS: Readonly<Record<string, RenderToolResult>> = Object
   edit_file: renderEditFile,
   multi_edit: renderEditFile,
   write_file: renderEditFile,
+  // INLINE-IMAGE-SECTION — fetch_image draws its result inline via the
+  // terminal graphics protocol (or a clean text fallback).
+  fetch_image: renderFetchImage,
 });
 
 /** Return the renderer for `name`, or `undefined` when none is registered. */

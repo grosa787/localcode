@@ -6,7 +6,22 @@
  * Platform detection is overridden via `_setSandboxPlatformOverride`
  * so the test runs deterministically on any host.
  */
-import { describe, test, expect, afterEach } from 'bun:test';
+import { describe, test, expect, afterEach, mock } from 'bun:test';
+
+import * as realDocker from '@/tools/sandbox/docker';
+
+// Host-independent docker detection — `findDockerBinary` probes hardcoded
+// absolute paths (`/usr/bin/docker`, `/opt/homebrew/bin/docker`, …) via
+// `existsSync` BEFORE walking `$PATH`, so the `backend='docker'` fallback
+// test was red on any host with docker actually installed (the `$PATH`
+// override in the test couldn't hide an absolute-path hit). Override ONLY
+// `findDockerBinary` to report docker absent, preserving every other docker
+// export (DockerRunner, buildDockerArgs). The firejail / sandbox-exec /
+// auto-detect tests are untouched and stay genuinely host-driven.
+mock.module('@/tools/sandbox/docker', () => ({
+  ...realDocker,
+  findDockerBinary: (): string | null => null,
+}));
 
 import {
   _resetFallbackWarnings,

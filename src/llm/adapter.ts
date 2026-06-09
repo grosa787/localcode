@@ -45,6 +45,11 @@ import {
   globalBreakerRegistry,
   registryKey,
 } from '@/llm/circuit-breaker';
+// INFERENCE-CONTROL-SECTION
+import type { CapabilityReport } from '@/llm/inference-control';
+import { isLocalInferenceBackend } from '@/llm/inference-control';
+import type { InferenceMode } from '@/types/global';
+// INFERENCE-CONTROL-SECTION-END
 
 // ---------- External response validation ----------
 
@@ -238,7 +243,52 @@ export interface LLMAdapterConfig {
    * sharing. See `docs/DEBUGGING_OPENROUTER.md`.
    */
   dumpFailedRequests?: boolean;
+  // INFERENCE-CONTROL-SECTION
+  /**
+   * Wave 16B — local-first constrained-decoding inputs. The composition
+   * root probes capabilities ONCE (async, outside the hot loop) and
+   * injects the precompiled artefacts here so `streamChat` stays
+   * synchronous and byte-stable on the system-prompt prefix.
+   *
+   * The adapter only ATTACHES these to the per-request body when:
+   *   1. the resolved backend is LOCAL (ollama/lmstudio/custom — never
+   *      cloud), AND
+   *   2. the capability report says the knob is honoured, AND
+   *   3. the corresponding `inference.*` mode is `'on'` or `'auto'`.
+   *
+   * Everything goes in the REQUEST body, NEVER the system prompt — the
+   * prefix cache stays hot. Absent fields = legacy behaviour (no-op).
+   */
+  inference?: InferenceControlConfig;
+  // INFERENCE-CONTROL-SECTION-END
 }
+
+// INFERENCE-CONTROL-SECTION
+/**
+ * Precomputed constrained-decoding artefacts handed to the adapter by the
+ * composition root. Keeping these precomputed (rather than probing /
+ * compiling inside `streamChat`) preserves the synchronous, byte-stable
+ * request path.
+ */
+export interface InferenceControlConfig {
+  /** Capability report from `probeCapabilities` (cloud → all false). */
+  report: CapabilityReport;
+  /** `inference.grammarLock` mode. `'auto'` defers to the report. */
+  grammarLock: InferenceMode;
+  /** `inference.logitBanlist` mode. `'auto'` defers to the report. */
+  logitBanlist: InferenceMode;
+  /**
+   * Precompiled GBNF tool-call grammar. Attached as `grammar` when the
+   * report says `grammar: true` and `grammarLock !== 'off'`.
+   */
+  toolGrammar?: string;
+  /**
+   * Precomputed token→bias map. Attached as `logit_bias` when the report
+   * says `logitBias: true`, `logitBanlist !== 'off'`, and it's non-empty.
+   */
+  logitBias?: Record<number, number>;
+}
+// INFERENCE-CONTROL-SECTION-END
 
 interface AccumulatedToolCall {
   index: number;
@@ -271,6 +321,9 @@ export class LLMAdapter {
   private readonly useJsonMode: boolean;
   private readonly adaptiveTemperature: boolean;
   private readonly dumpFailedRequests: boolean;
+  // INFERENCE-CONTROL-SECTION
+  private readonly inference: InferenceControlConfig | undefined;
+  // INFERENCE-CONTROL-SECTION-END
 
   /**
    * C2 — set (NOT a single slot) of every in-flight stream's abort
@@ -348,6 +401,9 @@ export class LLMAdapter {
     this.useJsonMode = config.useJsonMode === true;
     this.adaptiveTemperature = config.adaptiveTemperature === true;
     this.dumpFailedRequests = config.dumpFailedRequests === true;
+    // INFERENCE-CONTROL-SECTION
+    this.inference = config.inference;
+    // INFERENCE-CONTROL-SECTION-END
   }
 
   /**
@@ -1919,8 +1975,79 @@ export class LLMAdapter {
         }
       }
     }
+
+    // INFERENCE-CONTROL-SECTION
+    // Wave 16B — attach local-first constrained-decoding knobs to the
+    // PER-REQUEST body. These live here (NOT in the system prompt) so the
+    // byte-stable prefix cache is never disturbed. Additive + gated:
+    // omitted entirely for cloud backends and when unsupported/disabled.
+    this.applyInferenceControl(body, params);
+    // INFERENCE-CONTROL-SECTION-END
     return body;
   }
+
+  // INFERENCE-CONTROL-SECTION
+  /**
+   * Mutate `body` in place to add `grammar` / `logit_bias` / `cache_prompt`
+   * for LOCAL backends when the capability report + config allow.
+   *
+   * v1 targets ONE backend family: llama.cpp-class local servers
+   * (ollama / lmstudio / custom). Cloud backends (openai / openrouter /
+   * google / anthropic) are excluded unconditionally — they don't expose
+   * these knobs and a stray field would 400 a billed request.
+   *
+   * Caller-supplied `params.options` already merged above takes
+   * precedence: if the caller explicitly set `grammar` / `logit_bias` we
+   * never clobber it.
+   */
+  private applyInferenceControl(
+    body: Record<string, unknown>,
+    params: StreamChatParams,
+  ): void {
+    const inf = this.inference;
+    if (!inf) return;
+    // Hard gate: local backends only. `resolveBackend()` already collapses
+    // cloud onto 'lmstudio' for the wire SHAPE, so we must check the
+    // ORIGINAL backend here, not the resolved one.
+    if (!isLocalInferenceBackend(this.backend)) return;
+
+    const report = inf.report;
+
+    // Grammar — only when tools are present (a grammar-locked plain-text
+    // reply makes no sense). Gated on report.grammar + mode != 'off'.
+    const grammarOn = inf.grammarLock !== 'off';
+    const hasTools = Array.isArray(params.tools) && params.tools.length > 0;
+    if (
+      grammarOn &&
+      report.grammar &&
+      hasTools &&
+      typeof inf.toolGrammar === 'string' &&
+      inf.toolGrammar.length > 0 &&
+      !('grammar' in body)
+    ) {
+      body.grammar = inf.toolGrammar;
+    }
+
+    // Logit bias — gated on report.logitBias + mode != 'off' + non-empty.
+    const banlistOn = inf.logitBanlist !== 'off';
+    if (
+      banlistOn &&
+      report.logitBias &&
+      inf.logitBias &&
+      Object.keys(inf.logitBias).length > 0 &&
+      !('logit_bias' in body)
+    ) {
+      body.logit_bias = inf.logitBias;
+    }
+
+    // cache_prompt — a small, free win on llama.cpp-class servers that
+    // pins the KV prefix between turns. Only when the server honoured it
+    // during probing. Never on cloud (already excluded above).
+    if (report.cachePrompt && !('cache_prompt' in body)) {
+      body.cache_prompt = true;
+    }
+  }
+  // INFERENCE-CONTROL-SECTION-END
 
   /**
    * Resolve the base temperature, run {@link inferTemperatureForTask},

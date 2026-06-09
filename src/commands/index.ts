@@ -228,6 +228,16 @@ export { createMetricsCommand } from '@/commands/cmd-metrics';
 export type { MetricsCommandDeps } from '@/commands/cmd-metrics';
 // METRICS-CMD-SECTION-END
 
+// EVAL-CMD-SECTION — `/eval` runs the golden-task eval harness against
+// the active model/backend and prints a pass-rate report. `/eval <id>`
+// runs one task; `/eval export` writes `~/.localcode/eval-<date>.json`;
+// `/eval list` lists task ids. Makes REAL model calls (one autonomous
+// agent loop per task) in throwaway tmp repos — never touches project
+// files.
+export { createEvalCommand } from '@/commands/cmd-eval';
+export type { EvalCommandDeps, EvalLLM } from '@/commands/cmd-eval';
+// EVAL-CMD-SECTION-END
+
 // MARKETPLACE-CMD-SECTION — `/skills browse` + `/mcp browse` fetch +
 // install entries from public upstream catalogs (Anthropic skills,
 // modelcontextprotocol/servers). Both commands hand off to the shared
@@ -487,6 +497,15 @@ export interface BuiltinCommandFactories {
    */
   metrics?: SlashCommand;
   // METRICS-CMD-SECTION-END
+  // EVAL-CMD-SECTION
+  /**
+   * `/eval` — golden-task eval harness. Runs real autonomous agent loops
+   * against the active model and reports pass-rate / tokens / cost.
+   * Optional — wired only when the host injects an LLM adapter into the
+   * eval command factory.
+   */
+  eval?: SlashCommand;
+  // EVAL-CMD-SECTION-END
   // MARKETPLACE-CMD-SECTION
   /**
    * `/skills browse` — fetch the Anthropic skills catalog and open the
@@ -596,6 +615,9 @@ export function registerBuiltinCommands(
     // METRICS-CMD-SECTION
     factories.metrics,
     // METRICS-CMD-SECTION-END
+    // EVAL-CMD-SECTION
+    factories.eval,
+    // EVAL-CMD-SECTION-END
     // MARKETPLACE-CMD-SECTION
     factories.skillsBrowse,
     factories.mcpBrowse,

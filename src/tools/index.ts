@@ -49,6 +49,12 @@ import { commitEditNotebook, editNotebook } from './notebook-edit';
 import { monitorTask } from './monitor';
 import { scheduleWakeup } from './schedule-wakeup';
 import { readPdf } from './pdf-read';
+// DIAGNOSE-IMAGE-SECTION — `diagnose_image` read-only tool. Loads an error
+// screenshot, hands it to the multimodal model for stack-frame extraction,
+// then grounds the extracted frames against the TS ontology. Coordinate
+// any schema/name registration through THIS marker only.
+import { diagnoseImage, type DiagnoseImageContext } from './diagnose-image';
+// DIAGNOSE-IMAGE-SECTION-END
 // ONTOLOGY-TOOL-SECTION — `find_call_sites`, `impacts_of`, `type_hierarchy`.
 // Coordinate edits here with `src/llm/tools-schema.ts` and the matching
 // entries in `KNOWN_TOOL_NAMES` (see `src/types/message.ts`).
@@ -161,6 +167,28 @@ export { scheduleWakeup, ScheduleWakeupArgsSchema } from './schedule-wakeup';
 export type { ScheduleWakeupArgs } from './schedule-wakeup';
 export { readPdf, ReadPdfArgsSchema } from './pdf-read';
 export type { ReadPdfArgs, ReadPdfEnvelope, ReadPdfPage } from './pdf-read';
+// DIAGNOSE-IMAGE-SECTION
+export {
+  diagnoseImage,
+  groundFrames,
+  ontologyLookup,
+  enrichLookup,
+  boundedLevenshtein,
+  DiagnoseImageArgsSchema,
+  StackFrameSchema,
+} from './diagnose-image';
+export type {
+  DiagnoseImageArgs,
+  DiagnoseImageContext,
+  DiagnoseExtractEnvelope,
+  DiagnoseFs,
+  StackFrame,
+  GroundedFrame,
+  GroundingResult,
+  FrameStatus,
+  OntologyLookup,
+} from './diagnose-image';
+// DIAGNOSE-IMAGE-SECTION-END
 // ONTOLOGY-TOOL-SECTION
 export {
   findCallSitesTool,
@@ -386,6 +414,16 @@ export function createToolHandlerMap(ctx: ToolContext): ToolHandlerMap {
     read_pdf: {
       preview: (args) => readPdf(args, ctx),
     },
+    // DIAGNOSE-IMAGE-SECTION — read-only. Reads one image off disk + the
+    // in-memory ontology; mutates nothing, so no commit / no approval.
+    // Pass 1 returns the image as a multimodal part + extraction
+    // instruction (tools can't call the model directly); pass 2 (with a
+    // `frames` arg) grounds the extracted frames against the TS ontology.
+    diagnose_image: {
+      preview: (args) => diagnoseImage(args, ctx as DiagnoseImageContext),
+      readOnly: true,
+    },
+    // DIAGNOSE-IMAGE-SECTION-END
     // ONTOLOGY-TOOL-SECTION — ontology queries (read-only, single-phase).
     // Each handler returns `{ success: false, error: 'Ontology not ready' }`
     // when the indexer hasn't surfaced any symbols yet, so the model can

@@ -236,3 +236,165 @@ export function detectAndRenderFrame(
   const protocol = detectTerminalImageProtocol(env);
   return { protocol, payload: renderTerminalImage(frame, protocol) };
 }
+
+// INLINE-IMAGE-SECTION (start) — Wave 16C: inline rendering of
+// agent-produced images (fetch_image output) in the TUI transcript.
+//
+// The original `renderTerminalImage` above was written for the browser
+// screencast bus (always JPEG). Inline rendering of `fetch_image`
+// results has to handle PNG / GIF / WebP too, AND it has a hard
+// correctness constraint the screencast path did not: the Kitty
+// graphics protocol's `f=100` parameter means **PNG**, not JPEG — Kitty
+// does not natively decode JPEG/GIF/WebP, only PNG (and raw RGB/RGBA).
+// Feeding a JPEG to Kitty with `f=100` renders garbage. So the inline
+// path is mime-aware and degrades to the text fallback for protocols
+// that can't display the given format.
+
+/**
+ * An image to render inline. Distinct from `TerminalImageFrame` (which
+ * is JPEG-only and geometry-hinted for the screencast bus) — this
+ * carries the source MIME type so the renderer can decide whether the
+ * detected protocol can actually display it.
+ */
+export interface InlineImage {
+  /** Base64 payload, no `data:` prefix. */
+  readonly base64: string;
+  /** Source MIME type, e.g. `image/png`. Drives protocol applicability. */
+  readonly mimeType: string;
+  /** Decoded byte length (for the text fallback label). */
+  readonly byteLength?: number;
+}
+
+/**
+ * Result of an inline-image render attempt. `kind: 'escape'` carries the
+ * raw terminal escape sequence (write verbatim into a `<Text>`).
+ * `kind: 'fallback'` means the detected protocol can't display this
+ * image — the caller renders a clean text line instead.
+ */
+export type InlineImageRender =
+  | { readonly kind: 'escape'; readonly protocol: TerminalImageProtocol; readonly payload: string }
+  | { readonly kind: 'fallback'; readonly protocol: TerminalImageProtocol };
+
+/** Normalise a MIME type to a short label (`image/png` → `png`). */
+function mimeSubtype(mimeType: string): string {
+  const slash = mimeType.indexOf('/');
+  const sub = slash >= 0 ? mimeType.slice(slash + 1) : mimeType;
+  return sub.trim().toLowerCase();
+}
+
+/**
+ * Kitty's graphics protocol only natively decodes PNG (`f=100`) among
+ * compressed formats. JPEG/GIF/WebP would need a client-side decode +
+ * raw RGB(A) transmit that we don't bundle. So Kitty can ONLY display
+ * PNG here; everything else falls back to text on Kitty.
+ */
+function kittyCanRender(mimeType: string): boolean {
+  return mimeSubtype(mimeType) === 'png';
+}
+
+/**
+ * iTerm2's OSC 1337 inline-image protocol accepts the raw encoded bytes
+ * of any common format (it decodes internally), so PNG/JPEG/GIF/WebP all
+ * work.
+ */
+function iterm2CanRender(_mimeType: string): boolean {
+  return true;
+}
+
+/**
+ * Render an `InlineImage` for the given protocol. Returns a structured
+ * result so the caller can distinguish "here is an escape sequence" from
+ * "this protocol can't show this image — draw the text fallback".
+ *
+ * Pure: no env reads, no I/O. The escape-sequence string is what the
+ * caller caches (see the renderer's FNV-1a cache) and emits exactly
+ * once per committed `<Static>` row.
+ */
+export function renderInlineImage(
+  image: InlineImage,
+  protocol: TerminalImageProtocol,
+): InlineImageRender {
+  if (image.base64.length === 0) {
+    return { kind: 'fallback', protocol };
+  }
+  if (protocol === 'iterm2' && iterm2CanRender(image.mimeType)) {
+    return {
+      kind: 'escape',
+      protocol,
+      payload: renderIterm2({ jpegBase64: image.base64 }),
+    };
+  }
+  if (protocol === 'kitty' && kittyCanRender(image.mimeType)) {
+    return {
+      kind: 'escape',
+      protocol,
+      payload: renderKittyPng(image.base64),
+    };
+  }
+  // sixel (no encoder bundled) and none, plus any protocol that can't
+  // display this MIME, fall back to a clean text line drawn by the
+  // caller.
+  return { kind: 'fallback', protocol };
+}
+
+/**
+ * Kitty graphics protocol for a PNG payload.
+ *
+ * Format: `\x1b_Gf=100,a=T,t=d;<base64>\x1b\\`
+ *   - `f=100` — PNG (the ONLY compressed format Kitty decodes; `f=24`
+ *     is raw RGB, `f=32` is raw RGBA).
+ *   - `a=T`   — transmit AND display.
+ *   - `t=d`   — direct payload (base64), not a file path.
+ *
+ * Payloads over 4096 bytes are chunked with `m=1` continuation frames;
+ * `fetch_image` results routinely exceed that, so we chunk here. The
+ * first chunk carries the control keys; continuation chunks carry only
+ * `m=1` (more) / `m=0` (last). Without chunking Kitty silently drops
+ * oversized single frames on some builds.
+ */
+function renderKittyPng(base64: string): string {
+  const CHUNK = 4096;
+  if (base64.length <= CHUNK) {
+    return `\x1b_Gf=100,a=T,t=d;${base64}\x1b\\`;
+  }
+  const parts: string[] = [];
+  let offset = 0;
+  let first = true;
+  while (offset < base64.length) {
+    const slice = base64.slice(offset, offset + CHUNK);
+    offset += CHUNK;
+    const more = offset < base64.length ? 1 : 0;
+    if (first) {
+      parts.push(`\x1b_Gf=100,a=T,t=d,m=${more};${slice}\x1b\\`);
+      first = false;
+    } else {
+      parts.push(`\x1b_Gm=${more};${slice}\x1b\\`);
+    }
+  }
+  return parts.join('');
+}
+
+/**
+ * Build a clean one-line text fallback for an image that can't be drawn
+ * inline. Shape: `[image: <subtype> <N> bytes]`. Never emits escape
+ * bytes — safe on any terminal / when piped to a file.
+ */
+export function inlineImageFallbackLabel(image: InlineImage): string {
+  const sub = mimeSubtype(image.mimeType) || 'image';
+  if (typeof image.byteLength === 'number' && Number.isFinite(image.byteLength) && image.byteLength > 0) {
+    return `[image: ${sub} ${image.byteLength} bytes]`;
+  }
+  return `[image: ${sub}]`;
+}
+
+/**
+ * Whether inline image rendering is enabled. Default ON. Opt out via
+ * `LOCALCODE_NO_INLINE_IMAGES` (any non-empty value) or by forcing
+ * `LOCALCODE_IMAGE_PROTOCOL=none`.
+ */
+export function inlineImagesEnabled(env: TerminalEnvSnapshot & { readonly LOCALCODE_NO_INLINE_IMAGES?: string }): boolean {
+  const optOut = env.LOCALCODE_NO_INLINE_IMAGES;
+  if (typeof optOut === 'string' && optOut.trim().length > 0) return false;
+  return true;
+}
+// INLINE-IMAGE-SECTION (end)

@@ -64,7 +64,7 @@ import SkillInputOverlay, {
   type SkillOverlaySubmission,
   type SkillSubmitPayload,
 } from '@/ui/components/SkillInputOverlay';
-import { buildImageMessage } from '@/types/message';
+import { buildImageMessage, isMessageContentPartArray } from '@/types/message';
 import ProviderOverlay, {
   type ProviderApiKeys,
   type ProviderUrls,
@@ -102,7 +102,19 @@ import SkillsScreen from '@/ui/screens/SkillsScreen';
 import ModelSelectScreen from '@/ui/screens/ModelSelectScreen';
 
 import { LLMAdapter } from '@/llm/adapter';
+import type { InferenceControlConfig } from '@/llm/adapter';
 import { AnthropicAdapter } from '@/llm/adapter-anthropic';
+// INFERENCE-WIRING-SECTION — Wave 16B constrained-decoding inputs.
+// `probeCapabilities` is async and runs ONCE, outside the hot loop;
+// `compileToolGrammar` is sync. The composition root memoises the result
+// and feeds it to the adapter via `inference` so `streamChat` stays
+// synchronous and the byte-stable system-prompt prefix is untouched.
+import {
+  probeCapabilities,
+  compileToolGrammar,
+  isLocalInferenceBackend,
+} from '@/llm/inference-control';
+// INFERENCE-WIRING-SECTION-END
 import {
   ContextManager,
   buildCompressPrompt,
@@ -269,6 +281,9 @@ import {
   // METRICS-WIRE-SECTION — `/metrics` factory (Wave 10E).
   createMetricsCommand,
   // METRICS-WIRE-SECTION-END
+  // EVAL-WIRING-SECTION — `/eval` golden-task harness factory (Wave 16A).
+  createEvalCommand,
+  // EVAL-WIRING-SECTION-END
   // MARKETPLACE-WIRING-SECTION — `/skills browse` + `/mcp browse`.
   createSkillsBrowseCommand,
   createMcpBrowseCommand,
@@ -698,6 +713,11 @@ interface CreateAdapterOptions {
   readonly adaptiveTemperature?: boolean;
   readonly customHeaders?: Record<string, string>;
   readonly dumpFailedRequests?: boolean;
+  // INFERENCE-WIRING-SECTION — precomputed constrained-decoding inputs.
+  // Only meaningful on the LLMAdapter (local OpenAI-compat) path; the
+  // Anthropic branch ignores it (cloud never honours these knobs).
+  readonly inference?: InferenceControlConfig;
+  // INFERENCE-WIRING-SECTION-END
 }
 
 /**
@@ -748,6 +768,10 @@ function createAdapter(opts: CreateAdapterOptions): AnyAdapter {
     adaptiveTemperature: opts.adaptiveTemperature,
     customHeaders: opts.customHeaders,
     dumpFailedRequests: opts.dumpFailedRequests,
+    // INFERENCE-WIRING-SECTION — additive; the adapter only attaches the
+    // knobs for local backends whose capability report confirms support.
+    inference: opts.inference,
+    // INFERENCE-WIRING-SECTION-END
   });
 }
 
@@ -1449,6 +1473,85 @@ function App(props: AppProps): React.JSX.Element {
     resolvedGenerationRef.current = resolvedGeneration;
   }, [resolvedGeneration]);
 
+  // INFERENCE-WIRING-SECTION — local-first constrained decoding (Wave 16B).
+  //
+  // The adapter starts WITHOUT inference and GAINS it after the async
+  // capability probe resolves — the feature is purely additive, so the
+  // first turn (before the probe lands) is identical to legacy behaviour.
+  // We never block startup: `probeCapabilities` runs in a fire-and-forget
+  // effect, and `compileToolGrammar(TOOLS_SCHEMA)` is sync. The compiled
+  // grammar + report land on the `inference` field of the PER-REQUEST body
+  // only — never the byte-stable system prompt.
+  //
+  // Gated OFF entirely when:
+  //   - the backend is cloud (probe short-circuits to all-false anyway), or
+  //   - both `inference.grammarLock` and `inference.logitBanlist` are 'off'.
+  // `logit_bias` symbol-boosting requires a server `/tokenize` round-trip
+  // we don't wire here, so we ship grammar-lock (the keystone) and leave
+  // `logitBias` empty — the adapter omits an empty map gracefully.
+  const [inferenceConfig, setInferenceConfig] =
+    useState<InferenceControlConfig | null>(null);
+
+  useEffect(() => {
+    if (config === null) {
+      setInferenceConfig(null);
+      return;
+    }
+    const backend = config.backend.type;
+    const baseUrl = config.backend.baseUrl;
+    const model = modelOverride ?? config.model.current;
+    const inf = config.inference;
+    const grammarLock = inf?.grammarLock ?? 'auto';
+    const logitBanlist = inf?.logitBanlist ?? 'auto';
+
+    // Cloud backend, or every knob explicitly disabled → no inference.
+    if (
+      !isLocalInferenceBackend(backend) ||
+      (grammarLock === 'off' && logitBanlist === 'off')
+    ) {
+      setInferenceConfig(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const report = await probeCapabilities({ baseUrl, backend, model });
+        if (cancelled) return;
+        // `compileToolGrammar` is sync — compile once per (model, backend).
+        const toolGrammar =
+          grammarLock !== 'off' ? compileToolGrammar(TOOLS_SCHEMA).gbnf : undefined;
+        const resolved: InferenceControlConfig = {
+          report,
+          grammarLock,
+          logitBanlist,
+          ...(toolGrammar !== undefined ? { toolGrammar } : {}),
+          // logitBias intentionally omitted — needs a server tokenizer we
+          // don't wire in the TUI; the adapter no-ops on an absent map.
+        };
+        setInferenceConfig(resolved);
+      } catch {
+        // Probe failure → degrade to legacy (no inference). Never throws.
+        if (!cancelled) setInferenceConfig(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on the scalar fields the effect actually reads off `config`
+    // (not the whole object) so unrelated config churn — e.g. toggling
+    // `sound.enabled` — doesn't re-trigger a capability probe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    config?.backend.type,
+    config?.backend.baseUrl,
+    config?.model.current,
+    config?.inference?.grammarLock,
+    config?.inference?.logitBanlist,
+    modelOverride,
+  ]);
+  // INFERENCE-WIRING-SECTION-END
+
   // LLM adapter — rebuilt whenever backend / model / context tuning
   // changes so `/ctxsize`, `/model`, and `/provider` take effect live.
   // Keyed on the specific scalar fields rather than the whole config
@@ -1495,6 +1598,10 @@ function App(props: AppProps): React.JSX.Element {
       adaptiveTemperature: true,
       customHeaders: config.backend.customHeaders,
       dumpFailedRequests: config.diagnostics?.dumpFailedRequests === true,
+      // INFERENCE-WIRING-SECTION — null until the async probe resolves;
+      // the adapter rebuilds once and gains constrained decoding then.
+      inference: inferenceConfig ?? undefined,
+      // INFERENCE-WIRING-SECTION-END
     });
   }, [
     config?.backend.type,
@@ -1508,6 +1615,9 @@ function App(props: AppProps): React.JSX.Element {
     config?.context.trimToolResultsAfter,
     resolvedGeneration,
     modelOverride,
+    // INFERENCE-WIRING-SECTION — adapter rebuilds when the probe lands.
+    inferenceConfig,
+    // INFERENCE-WIRING-SECTION-END
   ]);
 
   const llmRef = useRef<AnyAdapter | null>(null);
@@ -1746,6 +1856,35 @@ function App(props: AppProps): React.JSX.Element {
       }).sandboxConfig = sandboxConfigForCtx;
     }
     // SANDBOX-WIRING-SECTION-END
+    // DIAGNOSE-WIRING-SECTION — surface the live model / backend (and the
+    // user's "force vision" intent) so `diagnose_image`'s non-vision gate
+    // can reject a screenshot handoff to a text-only model BEFORE the
+    // costly image round-trip. Defined as getters reading `configRef` so a
+    // mid-session `/model` or `/provider` swap is reflected without
+    // rebuilding the executor. `forceVision` maps to the composer's
+    // `suppressVisionWarning` toggle — the same "I know my model handles
+    // images" signal the image-attach path already honours.
+    Object.defineProperties(ctx, {
+      modelName: {
+        get(): string | undefined {
+          return configRef.current?.model.current;
+        },
+        enumerable: true,
+      },
+      backend: {
+        get(): Backend | undefined {
+          return configRef.current?.backend.type;
+        },
+        enumerable: true,
+      },
+      forceVision: {
+        get(): boolean {
+          return configRef.current?.composer?.suppressVisionWarning === true;
+        },
+        enumerable: true,
+      },
+    });
+    // DIAGNOSE-WIRING-SECTION-END
     const handlerMap = createToolHandlerMap(ctx);
 
     // Adapter to the shape ToolExecutor expects: (args) => Promise<ToolResult>.
@@ -2843,6 +2982,24 @@ function App(props: AppProps): React.JSX.Element {
       },
     });
 
+    // EVAL-WIRING-SECTION — `/eval` runs the golden-task harness against
+    // the freshest adapter (dereferenced via `llmRef` so a mid-session
+    // `/model` / `/provider` swap is honoured), mirroring `/review`.
+    const evalCmd = createEvalCommand({
+      llm: {
+        streamChat: async (params) => {
+          const adapter = llmRef.current;
+          if (adapter === null) {
+            throw new Error(
+              'LLM adapter not initialised — cannot run /eval.',
+            );
+          }
+          await adapter.streamChat(params);
+        },
+      },
+    });
+    // EVAL-WIRING-SECTION-END
+
     // Agent F (ROADMAP #10) — `/plan`. Borrow the live system-prompt
     // builder and the same `readLocalcodeMd` accessor used by `/init`.
     // Like `/review`, the LLM adapter is dereferenced via `llmRef`
@@ -3331,6 +3488,9 @@ function App(props: AppProps): React.JSX.Element {
       // METRICS-WIRE-SECTION
       metrics: metricsCmd,
       // METRICS-WIRE-SECTION-END
+      // EVAL-WIRING-SECTION
+      eval: evalCmd,
+      // EVAL-WIRING-SECTION-END
       // MARKETPLACE-WIRING-SECTION
       skillsBrowse: skillsBrowseCmd,
       mcpBrowse: mcpBrowseCmd,
@@ -4523,6 +4683,16 @@ function App(props: AppProps): React.JSX.Element {
           const imgMsg = maybeBuildImageFollowup(result);
           if (imgMsg !== null) extraUserMessages.push(imgMsg);
         }
+
+        // DIAGNOSE-WIRING-SECTION — splice pass-1's screenshot + extraction
+        // instruction into a user turn so the next model turn can OCR it
+        // and re-call diagnose_image with the extracted frames. Mirrors the
+        // fetch_image multimodal handoff directly above.
+        if (toolCall.name === 'diagnose_image' && result.success) {
+          const diagMsg = maybeBuildDiagnoseFollowup(result);
+          if (diagMsg !== null) extraUserMessages.push(diagMsg);
+        }
+        // DIAGNOSE-WIRING-SECTION-END
 
         // todo_write — refresh the in-memory todos state from DB so
         // TasksLine reflects the update immediately.
@@ -7658,6 +7828,43 @@ function maybeBuildImageFollowup(result: ToolResult): Message | null {
     return null;
   }
 }
+
+// DIAGNOSE-WIRING-SECTION — pass-1 of `diagnose_image` returns a
+// `diagnose-image-extract` envelope carrying the screenshot as an
+// OpenAI-shaped `MessageContentPart[]` (image_url + extraction
+// instruction). Tools cannot call the model directly, so — exactly like
+// `fetch_image` above — the host splices those `parts` into a follow-up
+// USER turn. The next model turn OCRs the image and re-invokes
+// `diagnose_image` with the extracted `frames` for grounding. The parts
+// are already in the multimodal shape adapters detect via
+// `isMessageContentPartArray`; we just carry them onto a user Message.
+function maybeBuildDiagnoseFollowup(result: ToolResult): Message | null {
+  try {
+    const parsed: unknown = JSON.parse(result.output);
+    if (
+      parsed === null ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
+    const obj = parsed as Record<string, unknown>;
+    if (obj['kind'] !== 'diagnose-image-extract') return null;
+    const parts = obj['parts'];
+    if (!isMessageContentPartArray(parts)) return null;
+    return {
+      id: `diag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'user',
+      // Cast: Message.content is `string` in the public domain type, but
+      // the adapter detects the array form at serialisation time.
+      content: parts as unknown as string,
+      createdAt: nowMs(),
+    };
+  } catch {
+    return null;
+  }
+}
+// DIAGNOSE-WIRING-SECTION-END
 
 async function executeToolsWithUi(
   toolCalls: readonly ToolCall[],
