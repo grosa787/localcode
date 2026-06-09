@@ -93,16 +93,33 @@ test('POST /api/projects with valid CSRF accepts', async () => {
 });
 
 test('GET /api/files/tree rejects path traversal', async () => {
-  const proj = (await fetch(
-    `http://127.0.0.1:${app.port}/api/projects`,
-  ).then((r) => r.json())) as { projects: Array<{ id: string }> };
-  const projectId = proj.projects[0]?.id ?? '';
-  expect(projectId).not.toBe('');
-  const url = new URL(`http://127.0.0.1:${app.port}/api/files/tree`);
-  url.searchParams.set('projectId', projectId);
-  url.searchParams.set('path', '../../../../../etc');
-  const res = await fetch(url);
-  expect([400, 403, 404]).toContain(res.status);
+  // Register a project so we have a valid id regardless of what real
+  // workspaces exist on the host. GET /api/projects filters tmpdir-rooted
+  // entries as junk (so a fresh CI host lists none), but POST still returns
+  // the created record — the id resolves for /api/files/tree even though
+  // it's hidden from the list. Self-contained so the test is host-independent.
+  const travRoot = mkdtempSync(join(tmpdir(), 'lc-web-it-trav-'));
+  try {
+    const created = await fetch(`http://127.0.0.1:${app.port}/api/projects`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-LocalCode-CSRF': app.csrfToken,
+      },
+      body: JSON.stringify({ root: travRoot }),
+    });
+    expect([200, 201]).toContain(created.status);
+    const body = (await created.json()) as { project: { id: string } };
+    const projectId = body.project.id;
+    expect(projectId).not.toBe('');
+    const url = new URL(`http://127.0.0.1:${app.port}/api/files/tree`);
+    url.searchParams.set('projectId', projectId);
+    url.searchParams.set('path', '../../../../../etc');
+    const res = await fetch(url);
+    expect([400, 403, 404]).toContain(res.status);
+  } finally {
+    rmSync(travRoot, { recursive: true, force: true });
+  }
 });
 
 test('unknown /api/* path returns 404', async () => {
