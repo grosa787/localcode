@@ -230,10 +230,16 @@ export async function startWebApp(
    // fired from pool eviction / shutdown, SessionStart fired on boot).
    // Each per-session runtime still builds its own HookEngine to capture
    // a snapshot of the hooks config at session-construction time.
+  // readOrCreate (not read): on a fresh machine `~/.localcode/config.toml`
+  // may not exist yet. Auto-create the defaults so `--web` boots instead of
+  // crashing with "cannot read config.toml" (mirrors the TUI self-heal in
+  // app.tsx). Read once here; the file now exists for the `.read()` calls
+  // in the per-session callbacks below.
+  const bootConfig = configManager.readOrCreate();
   const lifecycleHookEngine = new HookEngine({
     // SECURITY-CONFIG-SECTION — auto-prepend built-in secret scanner.
-    hooks: withBuiltinSecurityHooks(configManager.read().hooks, {
-      enabled: configManager.read().security?.secretScanner?.enabled,
+    hooks: withBuiltinSecurityHooks(bootConfig.hooks, {
+      enabled: bootConfig.security?.secretScanner?.enabled,
     }),
     logger: {
       warn: (m): void => {
