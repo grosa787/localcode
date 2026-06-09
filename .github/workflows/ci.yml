@@ -48,7 +48,10 @@ jobs:
           CI: "true"
 
       - name: Build CLI
-        run: bun build src/cli.tsx --outdir dist --target bun
+        # Use the canonical build:cli script (single source of truth) so the
+        # optional browser/electron deps are externalised. A bare `bun build`
+        # without these flags fails to resolve chromium-bidi / electron.
+        run: bun run build:cli
 
       - name: Smoke test built binary
         run: |
