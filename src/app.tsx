@@ -3495,7 +3495,12 @@ function App(props: AppProps): React.JSX.Element {
       eval: evalCmd,
       // EVAL-WIRING-SECTION-END
       // MARKETPLACE-WIRING-SECTION
-      skillsBrowse: skillsBrowseCmd,
+      // NOTE: skillsBrowseCmd is intentionally NOT registered here — it
+      // names itself 'skills', which collides with the /skills screen
+      // command (the collision crashed startup with "SlashCommand already
+      // registered: /skills"). The /skills command delegates `browse` to
+      // skillsBrowseCmd instead. /mcp has no such screen command, so its
+      // browse command registers cleanly on its own.
       mcpBrowse: mcpBrowseCmd,
       // MARKETPLACE-WIRING-SECTION-END
     });
@@ -3509,9 +3514,17 @@ function App(props: AppProps): React.JSX.Element {
     // Extra built-ins added here (not in Agent 6 factories).
     const skillsScreenCmd: SlashCommand = {
       name: 'skills',
-      description: 'Open the skills management screen',
-      usage: '/skills',
-      execute: (_args: string, _ctx: CommandContext): void => {
+      description: 'Open the skills screen, or `/skills browse` the marketplace',
+      usage: '/skills [browse [query]]',
+      execute: async (args: string, ctx: CommandContext): Promise<void> => {
+        // `/skills browse …` delegates to the marketplace browse command
+        // (which also names itself 'skills' and would otherwise collide
+        // on registration — that double-registration crashed startup).
+        // Bare `/skills` opens the management screen.
+        if (args.trim().split(/\s+/)[0] === 'browse') {
+          await skillsBrowseCmd.execute(args, ctx);
+          return;
+        }
         setScreen('skills');
       },
     };

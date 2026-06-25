@@ -624,7 +624,17 @@ export function registerBuiltinCommands(
     // MARKETPLACE-CMD-SECTION-END
   ];
   for (const cmd of ordered) {
-    if (cmd) registry.register(cmd);
+    if (!cmd) continue;
+    // Resilience: a duplicate / invalid command name must NEVER brick
+    // startup (a double-registered `/skills` once crashed the whole app
+    // in a passive-mount effect). Log + skip so every other command
+    // still registers and the TUI mounts.
+    try {
+      registry.register(cmd);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`localcode: skipped slash command /${cmd.name}: ${msg}\n`);
+    }
   }
   return registry;
 }
