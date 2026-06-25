@@ -19,6 +19,13 @@
  */
 
 import { resolve } from 'node:path';
+// Version is the single source of truth in package.json. Importing it
+// here inlines the literal at BUILD time (bun bundles the JSON), so the
+// embedded bundle never reads from disk at runtime AND the version can
+// never drift behind package.json again (it previously stuck at 0.22.0
+// across several releases, making the updater think it was always
+// out-of-date and re-download every launch).
+import pkgJson from '../package.json';
 import type { CliArgs, PermissionProfile } from '@/types/global';
 import { PermissionProfileSchema } from '@/config/types';
 
@@ -64,9 +71,9 @@ interface ExtendedCliArgs extends CliArgs {
 const DEFAULT_WEB_HOST = '127.0.0.1';
 const DEFAULT_WEB_PORT = 7777;
 
-// Keep in sync with package.json `version` field. CI test
-// `tests/cli/version-sync.test.ts` (TODO) will guard the drift.
-const PKG_VERSION = '0.22.0';
+// Single source of truth: package.json (imported above, inlined at
+// build time). Guarded by `tests/cli/version-sync.test.ts`.
+const PKG_VERSION = pkgJson.version;
 
 /**
  * R8 (Agent 8) — pre-mount model refresh budget. The cli does a fast,

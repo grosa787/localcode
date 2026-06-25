@@ -22,6 +22,7 @@ import { pipeline } from 'node:stream/promises';
 import { homedir } from 'node:os';
 
 import type { ReleaseInfo, ReleaseAssetInfo } from './types';
+import { isRunnableBundleFile } from './artifact-validate';
 // DELTA-PATCH-SECTION — imports
 import {
   applyPatch,
@@ -111,10 +112,13 @@ export function pickDownloadTarget(release: ReleaseInfo): {
     let s = 0;
     if (platMatches.some((p) => lower.includes(p))) s += 10;
     if (archMatches.some((a) => lower.includes(a))) s += 5;
-    // Bun-built single-file bundles tend to be plain `.js` or unsuffixed.
+    // A runnable `.js` bundle is THE artifact this updater installs (the
+    // live binary is launched via `bun cli.js`). Strongly prefer it over
+    // platform `.tar.gz`/`.zip` archives, which wrap a NATIVE binary that
+    // would corrupt a bun-script install if written over cli.js.
+    if (lower.endsWith('.js')) s += 50;
     if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) s += 2;
     if (lower.endsWith('.zip')) s += 1;
-    if (lower.endsWith('.js')) s += 3;
     return s;
   };
 
@@ -299,6 +303,20 @@ export async function downloadTarball(
     }
   } catch (err) {
     return { ok: false, error: `Stat failed: ${formatError(err)}` };
+  }
+
+  // Refuse to stage a non-JS-bundle artifact for a cli.js target. Release
+  // assets are platform `.tar.gz` archives wrapping a native binary;
+  // writing one over cli.js corrupts the install (bun then parses gzip as
+  // JS → crash). When only such archives are published the updater simply
+  // skips this version rather than staging a broken artifact.
+  const bundleCheck = await isRunnableBundleFile(destPath);
+  if (!bundleCheck.ok) {
+    await safeUnlink(destPath);
+    return {
+      ok: false,
+      error: `Downloaded asset "${target.name}" is ${bundleCheck.reason ?? 'not a runnable JS bundle'}; this install needs a cli.js artifact. Skipping.`,
+    };
   }
 
   return {

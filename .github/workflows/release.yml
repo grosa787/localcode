@@ -307,6 +307,29 @@ jobs:
             -exec cp {} release/ \;
           ls -la release/
 
+      # JS-BUNDLE-ASSET -------------------------------------------------
+      # Ship the runnable `cli.js` bundle so installs launched via
+      # `bun cli.js` (source / curl installs) can auto-update to a
+      # COMPATIBLE artifact. The platform `.tar.gz` archives wrap a
+      # NATIVE binary; writing one over a bun-script install's cli.js
+      # corrupts it (bun parses gzip/native as JS → crash). The updater
+      # prefers this `.js` asset (see pickDownloadTarget) and validates
+      # every artifact before applying (artifact-validate.ts).
+      - name: Setup Bun (for cli.js bundle)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Build cli.js JS bundle
+        shell: bash
+        run: |
+          set -eu
+          bun install --frozen-lockfile
+          bun run build
+          test -f dist/cli.js
+          cp dist/cli.js release/localcode-cli.js
+          ls -la release/localcode-cli.js
+      # JS-BUNDLE-ASSET-END ---------------------------------------------
+
       # DELTA-PATCH-STEP ------------------------------------------------
       # Compute a tiny binary delta between the PREVIOUS release's tarball
       # and the current release's tarball for each os/arch. The patch is
@@ -391,7 +414,7 @@ jobs:
           if compgen -G "localcode-*.zip" >/dev/null; then
             zip_args="$(ls localcode-*.zip)"
           fi
-          sha256sum localcode-*.tar.gz $zip_args sbom.cyclonedx.json $patch_args > SHA256SUMS
+          sha256sum localcode-*.tar.gz localcode-cli.js $zip_args sbom.cyclonedx.json $patch_args > SHA256SUMS
           echo "--- SHA256SUMS ---"
           cat SHA256SUMS
           sha256sum --check SHA256SUMS
@@ -461,6 +484,7 @@ jobs:
             release/localcode-linux-arm64.tar.gz.sha256
             release/localcode-win-x64.zip
             release/localcode-win-x64.zip.sha256
+            release/localcode-cli.js
             release/SHA256SUMS
             release/sbom.cyclonedx.json
             release/localcode-*-from-*-to-*.patch

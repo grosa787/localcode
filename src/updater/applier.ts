@@ -27,6 +27,7 @@ import { z } from 'zod';
 
 import { PendingUpdateSchema, type PendingUpdate } from './types';
 import { getPendingManifestPath } from './downloader';
+import { isRunnableBundleFile } from './artifact-validate';
 
 export interface ApplyResult {
   readonly ok: boolean;
@@ -110,6 +111,19 @@ export async function applyManifest(
     await stat(stagedPath);
   } catch {
     return { ok: false, error: `Staged binary missing: ${stagedPath}` };
+  }
+
+  // Safety net: NEVER promote a non-JS-bundle artifact onto the live
+  // cli.js. The live binary is launched via `bun cli.js`, so a gzip
+  // tarball / native binary here would make the next launch parse
+  // binary as JS and hard-crash. Refuse + leave the working install
+  // untouched. This is the backstop that makes the updater fail-safe.
+  const stagedValidity = await isRunnableBundleFile(stagedPath);
+  if (!stagedValidity.ok) {
+    return {
+      ok: false,
+      error: `Refusing to apply staged update — ${stagedValidity.reason ?? 'not a runnable JS bundle'}. The install was left untouched.`,
+    };
   }
 
   const livePath = opts.liveBinaryPathOverride ?? (await resolveLiveBinaryPath());

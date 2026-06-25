@@ -31,6 +31,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// Version single-source-of-truth: package.json, inlined at build time.
+import pkgJson from '../package.json';
+
 import React, {
   useCallback,
   useEffect,
@@ -590,7 +593,7 @@ const SLASH_CLEAN_IDENT_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 // is package.json; cli.tsx + this module both copy the literal so the
 // embedded bundle never reads from disk. CI / test
 // `tests/cli/version-sync.test.ts` (existing) covers the drift.
-const PKG_VERSION_FOR_UPDATER = '0.19.0';
+const PKG_VERSION_FOR_UPDATER = pkgJson.version;
 // UPDATER-WIRE-SECTION-END
 
 /**
