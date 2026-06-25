@@ -183,6 +183,46 @@ export const en = {
   'provider.footer':
     '↑/↓ navigate · (space) select · (enter) edit URL · (tab/e) edit key · (ctrl+enter / a) apply · (esc) cancel',
 
+  // ---------- /mcp add-server overlay ----------
+  'mcp.add.title': 'Add MCP server',
+  'mcp.add.existing': 'Configured servers: {names}',
+  'mcp.add.existing.none': 'No MCP servers configured yet.',
+  'mcp.add.field.name': 'Name',
+  'mcp.add.field.url': 'URL',
+  'mcp.add.field.auth': 'Auth',
+  'mcp.add.field.token': 'Token',
+  'mcp.add.field.login': 'Login',
+  'mcp.add.field.password': 'Password',
+  'mcp.add.auth.none': 'None',
+  'mcp.add.auth.bearer': 'Bearer token',
+  'mcp.add.auth.basic': 'Basic (login + password)',
+  'mcp.add.placeholder.name': 'my-server',
+  'mcp.add.placeholder.url': 'http://192.168.1.10:8080/mcp',
+  'mcp.add.placeholder.token': 'paste token…',
+  'mcp.add.placeholder.login': 'username',
+  'mcp.add.placeholder.password': 'password',
+  'mcp.add.notSet': '(empty)',
+  'mcp.add.secretWarn':
+    'Secrets are visible while typing — clear your terminal scrollback after pasting.',
+  'mcp.add.editing': 'Editing — Enter to save · Esc to cancel',
+  'mcp.add.error.prefix': 'Error: {msg}',
+  'mcp.add.error.nameRequired': 'Name is required',
+  'mcp.add.error.nameInvalid':
+    'Name may only contain letters, digits, dot, dash and underscore',
+  'mcp.add.error.nameDuplicate': "A server named '{name}' already exists",
+  'mcp.add.error.urlRequired': 'URL is required',
+  'mcp.add.error.urlInvalid': 'URL is not valid (expected http://host:port[/path])',
+  'mcp.add.error.tokenRequired': 'Bearer token is required',
+  'mcp.add.error.loginRequired': 'Login is required',
+  'mcp.add.error.passwordRequired': 'Password is required',
+  'mcp.add.footer':
+    '↑/↓ navigate · ←/→ auth · (enter) edit field · (ctrl+enter / a) add · (esc) cancel',
+  'mcp.add.toast.success':
+    "Added MCP server '{name}'. Its tools appear after you restart localcode.",
+  'mcp.add.toast.savedButError':
+    "Saved MCP server '{name}' but could not connect: {msg}. Fix the URL/auth and retry, or restart localcode.",
+  'mcp.add.toast.saveFailed': "Failed to save MCP server '{name}': {msg}",
+
   // ---------- /settings overlay ----------
   'settings.title': 'Generation Settings',
   'settings.source.globalOnly': 'Source: global (no project overrides)',

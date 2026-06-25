@@ -184,6 +184,46 @@ export const ru: StringTable = {
   'provider.footer':
     '↑/↓ навигация · (пробел) выбрать · (enter) править URL · (tab/e) править ключ · (ctrl+enter / a) применить · (esc) отмена',
 
+  // ---------- Окно /mcp добавление сервера ----------
+  'mcp.add.title': 'Добавить MCP-сервер',
+  'mcp.add.existing': 'Настроенные серверы: {names}',
+  'mcp.add.existing.none': 'MCP-серверы ещё не настроены.',
+  'mcp.add.field.name': 'Имя',
+  'mcp.add.field.url': 'URL',
+  'mcp.add.field.auth': 'Авторизация',
+  'mcp.add.field.token': 'Токен',
+  'mcp.add.field.login': 'Логин',
+  'mcp.add.field.password': 'Пароль',
+  'mcp.add.auth.none': 'Нет',
+  'mcp.add.auth.bearer': 'Bearer-токен',
+  'mcp.add.auth.basic': 'Basic (логин + пароль)',
+  'mcp.add.placeholder.name': 'my-server',
+  'mcp.add.placeholder.url': 'http://192.168.1.10:8080/mcp',
+  'mcp.add.placeholder.token': 'вставьте токен…',
+  'mcp.add.placeholder.login': 'имя пользователя',
+  'mcp.add.placeholder.password': 'пароль',
+  'mcp.add.notSet': '(пусто)',
+  'mcp.add.secretWarn':
+    'Секреты видны во время ввода — очистите буфер терминала после вставки.',
+  'mcp.add.editing': 'Правка — Enter сохранить · Esc отмена',
+  'mcp.add.error.prefix': 'Ошибка: {msg}',
+  'mcp.add.error.nameRequired': 'Укажите имя',
+  'mcp.add.error.nameInvalid':
+    'Имя может содержать только буквы, цифры, точку, дефис и подчёркивание',
+  'mcp.add.error.nameDuplicate': "Сервер с именем '{name}' уже существует",
+  'mcp.add.error.urlRequired': 'Укажите URL',
+  'mcp.add.error.urlInvalid': 'Некорректный URL (ожидается http://host:port[/path])',
+  'mcp.add.error.tokenRequired': 'Укажите Bearer-токен',
+  'mcp.add.error.loginRequired': 'Укажите логин',
+  'mcp.add.error.passwordRequired': 'Укажите пароль',
+  'mcp.add.footer':
+    '↑/↓ навигация · ←/→ авторизация · (enter) править поле · (ctrl+enter / a) добавить · (esc) отмена',
+  'mcp.add.toast.success':
+    "MCP-сервер '{name}' добавлен. Его инструменты появятся после перезапуска localcode.",
+  'mcp.add.toast.savedButError':
+    "MCP-сервер '{name}' сохранён, но подключиться не удалось: {msg}. Исправьте URL/авторизацию и повторите или перезапустите localcode.",
+  'mcp.add.toast.saveFailed': "Не удалось сохранить MCP-сервер '{name}': {msg}",
+
   // ---------- Окно /settings ----------
   'settings.title': 'Параметры генерации',
   'settings.source.globalOnly':

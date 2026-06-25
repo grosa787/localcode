@@ -833,7 +833,11 @@ export type OverlayKind =
   // `/metrics`. The aggregator gates on `config.telemetry.enabled` and
   // returns a synthetic "disabled" snapshot when off, so the kind is
   // always safe to dispatch.
-  | 'metrics';
+  | 'metrics'
+  // MCP-OVERLAY-SECTION — `/mcp` (bare) opens the interactive
+  // "add an MCP server" overlay (URL + auth → config.mcpServers).
+  // `/mcp browse` still routes to the marketplace.
+  | 'mcp';
 
 export interface CommandContext {
   projectRoot: string;

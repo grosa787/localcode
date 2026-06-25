@@ -52,6 +52,7 @@ import type {
   Backend,
   CommandContext,
   GenerationConfig,
+  McpServerConfig,
   Message,
   OverlayKind,
   PermissionProfile,
@@ -72,6 +73,11 @@ import ProviderOverlay, {
   type ProviderApiKeys,
   type ProviderUrls,
 } from '@/ui/components/ProviderOverlay';
+// MCP-OVERLAY-SECTION — `/mcp` (bare) "add an MCP server" overlay.
+import McpOverlay, {
+  buildMcpServerFromForm,
+} from '@/ui/components/McpOverlay';
+// MCP-OVERLAY-SECTION-END
 import SettingsOverlay from '@/ui/components/SettingsOverlay';
 import { SoundPlayer } from '@/integration/sound';
 
@@ -3495,13 +3501,13 @@ function App(props: AppProps): React.JSX.Element {
       eval: evalCmd,
       // EVAL-WIRING-SECTION-END
       // MARKETPLACE-WIRING-SECTION
-      // NOTE: skillsBrowseCmd is intentionally NOT registered here — it
-      // names itself 'skills', which collides with the /skills screen
-      // command (the collision crashed startup with "SlashCommand already
-      // registered: /skills"). The /skills command delegates `browse` to
-      // skillsBrowseCmd instead. /mcp has no such screen command, so its
-      // browse command registers cleanly on its own.
-      mcpBrowse: mcpBrowseCmd,
+      // NOTE: neither skillsBrowseCmd nor mcpBrowseCmd is registered here.
+      // Both name themselves after the bare command (`skills` / `mcp`) and
+      // would collide with the dedicated screen/overlay command (the
+      // collision crashed startup with "SlashCommand already registered").
+      // `/skills` delegates `browse` to skillsBrowseCmd; `/mcp` delegates
+      // `browse` to mcpBrowseCmd (see mcpScreenCmd below) and opens the
+      // add-server overlay on the bare invocation.
       // MARKETPLACE-WIRING-SECTION-END
     });
 
@@ -3528,6 +3534,32 @@ function App(props: AppProps): React.JSX.Element {
         setScreen('skills');
       },
     };
+
+    // MCP-OVERLAY-SECTION — the single `/mcp` command. Bare `/mcp` (or
+    // `/mcp add`) opens the interactive add-server overlay; `/mcp browse
+    // [query]` delegates to the marketplace browse command (which also
+    // names itself 'mcp' and would collide on registration — it is NOT
+    // registered directly, only delegated to here).
+    const mcpScreenCmd: SlashCommand = {
+      name: 'mcp',
+      description:
+        'Add an MCP server (URL + auth), or `/mcp browse` the marketplace',
+      usage: '/mcp [add | browse [query]]',
+      execute: async (args: string, ctx: CommandContext): Promise<void> => {
+        const verb = args.trim().split(/\s+/)[0] ?? '';
+        if (verb === 'browse') {
+          await mcpBrowseCmd.execute(args, ctx);
+          return;
+        }
+        // Bare `/mcp` and `/mcp add` both open the add-server overlay.
+        if (ctx.showOverlay !== undefined) {
+          ctx.showOverlay('mcp');
+          return;
+        }
+        ctx.print('MCP add overlay is unavailable in this context.');
+      },
+    };
+    // MCP-OVERLAY-SECTION-END
 
     const exitCmd: SlashCommand = {
       name: 'exit',
@@ -3573,6 +3605,9 @@ function App(props: AppProps): React.JSX.Element {
     };
 
     registry.register(skillsScreenCmd);
+    // MCP-OVERLAY-SECTION
+    registry.register(mcpScreenCmd);
+    // MCP-OVERLAY-SECTION-END
     registry.register(exitCmd);
     registry.register(helpCmd);
 
@@ -6181,6 +6216,47 @@ function App(props: AppProps): React.JSX.Element {
     [configManager],
   );
 
+  // MCP-OVERLAY-SECTION — `/mcp` add-server apply handler.
+  //
+  // Persist the new HTTP server into `config.mcpServers` (preserving any
+  // existing servers), close the overlay, then boot ONLY the new slot via
+  // the idempotent registry. The connection is validated now (the registry
+  // records start/list errors), but its tools only surface on the NEXT
+  // runtime construction (CLAUDE.md known-limit) — so we tell the user to
+  // restart. On a connect error we keep the saved config so the user can
+  // fix the URL/auth and retry. Never throws — every path is guarded.
+  const onMcpApply = useCallback(
+    (result: { name: string; server: McpServerConfig }): void => {
+      const { name, server } = result;
+      chatDispatch({ type: 'CLOSE_OVERLAY' });
+      let saved = false;
+      try {
+        const existing = configManager.read().mcpServers ?? {};
+        const merged = configManager.update({
+          mcpServers: { ...existing, [name]: server },
+        });
+        setConfig(merged);
+        saved = true;
+      } catch (cause) {
+        const msg = cause instanceof Error ? cause.message : String(cause);
+        appendLog(appT('mcp.add.toast.saveFailed', { name, msg }));
+        return;
+      }
+      if (!saved) return;
+      void (async (): Promise<void> => {
+        try {
+          await getProcessMcpRegistry().start({ [name]: server });
+          appendLog(appT('mcp.add.toast.success', { name }));
+        } catch (cause) {
+          const msg = cause instanceof Error ? cause.message : String(cause);
+          appendLog(appT('mcp.add.toast.savedButError', { name, msg }));
+        }
+      })();
+    },
+    [appendLog, configManager],
+  );
+  // MCP-OVERLAY-SECTION-END
+
   /**
    * Provider overlay — liveness probe. Returns true iff the URL
    * responds OK within the adapter's ping timeout. Uses a standalone
@@ -7115,6 +7191,21 @@ function App(props: AppProps): React.JSX.Element {
           </Box>
         );
       }
+      // MCP-OVERLAY-SECTION — `/mcp` (bare) add-server overlay. Same
+      // takeover mount as ProviderOverlay: it owns input until the user
+      // applies (persist + connect via onMcpApply) or cancels.
+      if (chatState.overlayKind === 'mcp') {
+        return renderTree(
+          <Box flexDirection="column">
+            <McpOverlay
+              existingServers={Object.keys(config.mcpServers ?? {})}
+              onApply={onMcpApply}
+              onClose={closeOverlay}
+            />
+          </Box>
+        );
+      }
+      // MCP-OVERLAY-SECTION-END
       // R9 (Agent 8) — `/new-skill` overlay. Mounted as a standalone
       // screen (same pattern as ProviderOverlay/SettingsOverlay) so we
       // can wire `onAiWriterGenerate` to the local LLM. ChatScreen's
