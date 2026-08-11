@@ -2,12 +2,12 @@
  * Tests for the LOCALCODE.md hierarchy loader.
  *
  * Mirrors Claude Code's CLAUDE.md walk: from `projectRoot` upward to `$HOME`
- * collecting every `.localcode/LOCALCODE.md`, plus the global one. We
- * cannot easily mock `os.homedir()` per-test, but we can construct a tmpdir
- * that lives under the real $HOME (when possible) — instead we use the
- * straightforward strategy of asserting on a single project layer plus
- * documented invariants (order, separator, size accounting, pointer
- * fallback, race-safety).
+ * collecting every `.localcode/LOCALCODE.md`, plus the global one.
+ *
+ * Every case pins `homeDir` to the per-test tmpdir. Bun's `os.homedir()`
+ * ignores a mid-process `$HOME` change, so without the injection the walk
+ * climbs past the fixture into the developer's real
+ * `~/.localcode/LOCALCODE.md` and the size assertions read its bytes.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
@@ -15,13 +15,16 @@ import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { loadHierarchy } from '@/init/localcode-md';
+import { loadHierarchy, type LoadHierarchyOptions } from '@/init/localcode-md';
 
 let tmpRoot = '';
+let hier: LoadHierarchyOptions = {};
 
 beforeEach(async () => {
   tmpRoot = path.join(os.tmpdir(), `lc-hier-${crypto.randomUUID()}`);
   await mkdir(tmpRoot, { recursive: true });
+  // Walk ceiling = fixture root: nothing above it can leak in.
+  hier = { homeDir: tmpRoot };
 });
 
 afterEach(async () => {
@@ -38,7 +41,7 @@ async function writeMd(dir: string, content: string): Promise<string> {
 
 describe('loadHierarchy — basic behaviour', () => {
   test('returns size=0 with no inline/pointers when no LOCALCODE.md exists', () => {
-    const result = loadHierarchy(tmpRoot);
+    const result = loadHierarchy(tmpRoot, hier);
     expect(result.size).toBe(0);
     expect(result.inline).toBeUndefined();
     expect(result.pointers).toBeUndefined();
@@ -46,7 +49,7 @@ describe('loadHierarchy — basic behaviour', () => {
 
   test('returns inline string for a single project-level LOCALCODE.md', async () => {
     await writeMd(tmpRoot, '# Project\n\nProject-level instructions.');
-    const result = loadHierarchy(tmpRoot);
+    const result = loadHierarchy(tmpRoot, hier);
     expect(result.inline).toBeDefined();
     expect(result.pointers).toBeUndefined();
     expect(result.inline ?? '').toContain('Project-level instructions');
@@ -62,7 +65,7 @@ describe('loadHierarchy — basic behaviour', () => {
     await writeMd(parent, '# Outer\n\nPARENT-MARKER');
     await writeMd(child, '# Inner\n\nCHILD-MARKER');
 
-    const result = loadHierarchy(child);
+    const result = loadHierarchy(child, hier);
     expect(result.inline).toBeDefined();
     const body = result.inline ?? '';
     const parentIdx = body.indexOf('PARENT-MARKER');
@@ -79,7 +82,7 @@ describe('loadHierarchy — basic behaviour', () => {
     await mkdir(child, { recursive: true });
     await writeMd(parent, '# Outer\n\nOUTER');
     await writeMd(child, '# Inner\n\nINNER');
-    const result = loadHierarchy(child);
+    const result = loadHierarchy(child, hier);
     const body = result.inline ?? '';
     expect(body).toContain('\n\n---\n\n# ');
   });
@@ -89,7 +92,7 @@ describe('loadHierarchy — size accounting and pointer fallback', () => {
   test('switches to pointers when joined body exceeds the inline budget', async () => {
     const big = 'X'.repeat(6000); // > LOCALCODE_INLINE_LIMIT (5000)
     await writeMd(tmpRoot, big);
-    const result = loadHierarchy(tmpRoot);
+    const result = loadHierarchy(tmpRoot, hier);
     expect(result.inline).toBeUndefined();
     expect(result.pointers).toBeDefined();
     expect((result.pointers ?? []).length).toBe(1);
@@ -99,7 +102,7 @@ describe('loadHierarchy — size accounting and pointer fallback', () => {
 
   test('size accounts for separator overhead, not just content lengths', async () => {
     await writeMd(tmpRoot, 'a');
-    const result = loadHierarchy(tmpRoot);
+    const result = loadHierarchy(tmpRoot, hier);
     // size includes the label + content; must be larger than just content.
     expect(result.size).toBeGreaterThanOrEqual(1);
   });
@@ -108,7 +111,7 @@ describe('loadHierarchy — size accounting and pointer fallback', () => {
 describe('loadHierarchy — safety invariants', () => {
   test('skips an empty LOCALCODE.md (no inline, no pointers, size=0)', async () => {
     await writeMd(tmpRoot, '   \n\n   ');
-    const result = loadHierarchy(tmpRoot);
+    const result = loadHierarchy(tmpRoot, hier);
     expect(result.size).toBe(0);
     expect(result.inline).toBeUndefined();
     expect(result.pointers).toBeUndefined();
@@ -132,26 +135,26 @@ describe('loadHierarchy — safety invariants', () => {
       // Some filesystems / CI sandboxes refuse symlinks — skip in that case.
       return;
     }
-    const result = loadHierarchy(project);
+    const result = loadHierarchy(project, hier);
     expect(result.size).toBe(0);
     expect(result.inline).toBeUndefined();
   });
 
   test('returns empty result if projectRoot does not exist (no throw)', () => {
     const missing = path.join(tmpRoot, 'does-not-exist');
-    const result = loadHierarchy(missing);
+    const result = loadHierarchy(missing, hier);
     expect(result.size).toBe(0);
   });
 });
 
 describe('loadHierarchy — walk termination', () => {
   test('stops walking at $HOME (does not climb above)', async () => {
-    // We can only verify this indirectly: a project inside tmpdir
-    // typically sits OUTSIDE $HOME (macOS /var/folders/...). The walk
-    // should stop at filesystem root without crashing; the result should
-    // be the same as if no parent LOCALCODE.md exists.
+    // projectRoot === homeDir: the walk collects exactly one layer and
+    // stops, so nothing from the real filesystem above tmpdir appears.
     await writeMd(tmpRoot, 'PROJECT');
-    const result = loadHierarchy(tmpRoot);
-    expect((result.inline ?? '').includes('PROJECT')).toBe(true);
+    const result = loadHierarchy(tmpRoot, hier);
+    const body = result.inline ?? '';
+    expect(body.includes('PROJECT')).toBe(true);
+    expect(body.split('---').length).toBe(1); // single layer, no separator
   });
 });

@@ -18,9 +18,13 @@
  * decides when to mount it and supplies a single `onDone` callback.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { noxPalette, textMuted } from '../theme.js';
+// Version single-source-of-truth: package.json, inlined at build time.
+// A hardcoded literal here drifted five releases behind and was the
+// first thing a new user read — contradicting `localcode --version`.
+import pkgJson from '../../../package.json';
 
 const LOGO_LETTERS = ['L', 'o', 'c', 'a', 'l', 'C', 'o', 'd', 'e'] as const;
 const SPARKLE_FRAMES = ['✦', '✨', '✧', '✦'] as const;
@@ -30,7 +34,7 @@ const TAGLINES = [
   'Built for power users',
 ] as const;
 const SUBTITLE = 'Local-first AI pair programmer';
-const VERSION_LINE = 'v0.20.0 · MIT';
+const VERSION_LINE = `v${pkgJson.version} · MIT`;
 
 /** Per-letter reveal delay (ms). */
 const LETTER_STEP_MS = 50;
@@ -56,6 +60,19 @@ export interface SplashScreenProps {
   readonly clearTimeoutFn?: (handle: unknown) => void;
 }
 
+const defaultSetInterval = (cb: () => void, ms: number): unknown =>
+  globalThis.setInterval(cb, ms);
+// Node's timer handles are NodeJS.Timeout objects; cast at the boundary
+// so the rest of the file stays free of `any`.
+const defaultClearInterval = (h: unknown): void => {
+  globalThis.clearInterval(h as Parameters<typeof globalThis.clearInterval>[0]);
+};
+const defaultSetTimeout = (cb: () => void, ms: number): unknown =>
+  globalThis.setTimeout(cb, ms);
+const defaultClearTimeout = (h: unknown): void => {
+  globalThis.clearTimeout(h as Parameters<typeof globalThis.clearTimeout>[0]);
+};
+
 function SplashScreen({
   onDone,
   setIntervalFn,
@@ -77,26 +94,14 @@ function SplashScreen({
   const [taglineIdx, setTaglineIdx] = useState<number>(0);
   const [subtitleShown, setSubtitleShown] = useState<boolean>(reducedMotion);
 
-  // Test seams default to the globals; assigning a typed local first
-  // keeps the function-pointer types narrow (no `any`).
-  const setIntervalImpl =
-    setIntervalFn ??
-    ((cb: () => void, ms: number): unknown => globalThis.setInterval(cb, ms));
-  const clearIntervalImpl =
-    clearIntervalFn ??
-    ((h: unknown): void => {
-      // Node's setInterval handle is a NodeJS.Timeout object; cast at
-      // the boundary so we don't poison the rest of the file with `any`.
-      globalThis.clearInterval(h as Parameters<typeof globalThis.clearInterval>[0]);
-    });
-  const setTimeoutImpl =
-    setTimeoutFn ??
-    ((cb: () => void, ms: number): unknown => globalThis.setTimeout(cb, ms));
-  const clearTimeoutImpl =
-    clearTimeoutFn ??
-    ((h: unknown): void => {
-      globalThis.clearTimeout(h as Parameters<typeof globalThis.clearTimeout>[0]);
-    });
+  // Test seams default to the module-level globals wrappers. These MUST
+  // be stable identities: every animation effect lists them in its dep
+  // array, so per-render arrows re-armed the 3s auto-advance timeout on
+  // every sparkle tick (200ms) and the splash never advanced.
+  const setIntervalImpl = setIntervalFn ?? defaultSetInterval;
+  const clearIntervalImpl = clearIntervalFn ?? defaultClearInterval;
+  const setTimeoutImpl = setTimeoutFn ?? defaultSetTimeout;
+  const clearTimeoutImpl = clearTimeoutFn ?? defaultClearTimeout;
 
   const finish = useCallback((): void => {
     onDone();
@@ -149,12 +154,18 @@ function SplashScreen({
   }, [reducedMotion, subtitleShown, setTimeoutImpl, clearTimeoutImpl]);
 
   // ── Auto-advance ──────────────────────────────────────────────────
+  // Read `finish` through a ref so the timeout is armed exactly once on
+  // mount. App passes `onDone` as an inline arrow, so a `finish` dep
+  // would restart the countdown on every parent re-render and the
+  // splash would never time out on its own.
+  const finishRef = useRef<() => void>(finish);
+  finishRef.current = finish;
   useEffect(() => {
-    const handle = setTimeoutImpl(finish, AUTO_ADVANCE_MS);
+    const handle = setTimeoutImpl(() => finishRef.current(), AUTO_ADVANCE_MS);
     return (): void => {
       clearTimeoutImpl(handle);
     };
-  }, [finish, setTimeoutImpl, clearTimeoutImpl]);
+  }, [setTimeoutImpl, clearTimeoutImpl]);
 
   // ── Skip on any key ───────────────────────────────────────────────
   useInput(

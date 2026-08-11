@@ -86,6 +86,8 @@ import { renderMemorySection } from '@/llm/memory-prompt';
 import { loadHierarchy } from '@/init/localcode-md';
 import { WakeupRegistry, setProcessWakeupRegistry } from '@/scheduling';
 import chokidar from 'chokidar';
+// Version single-source-of-truth: package.json, inlined at build time.
+import pkgJson from '../../package.json';
 // PRICING-REFRESH-SECTION — fire a non-blocking refresh of the
 // OpenRouter pricing catalog at web boot so per-message cost chips +
 // dashboards have fresh prices on first session open. The fetch is
@@ -1033,10 +1035,11 @@ export async function startWebApp(
       }
       if (!updaterCfg.enabled) return;
       const { getProcessUpdater } = await import('@/updater');
-      // PKG_VERSION mirror — kept in sync with cli.tsx via the same
-      // single-source-of-truth (package.json) discipline.
+      // Version comes from package.json (same single-source-of-truth as
+      // cli.tsx) — a stale literal made every --web boot re-download the
+      // release it was already running.
       const updater = getProcessUpdater({
-        currentVersion: '0.19.0',
+        currentVersion: pkgJson.version,
         autoDownload: updaterCfg.autoDownload,
         intervalMs: updaterCfg.checkIntervalHours * 60 * 60 * 1_000,
         preferPatchDelta: updaterCfg.preferPatchDelta,

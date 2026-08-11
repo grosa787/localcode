@@ -307,6 +307,18 @@ export interface LocalcodeMdHierarchyResult {
   size: number;
 }
 
+/** Options for `loadHierarchy`. */
+export interface LoadHierarchyOptions {
+  /**
+   * Overrides `os.homedir()` for the walk ceiling, the global
+   * `<home>/.localcode/LOCALCODE.md` lookup and `~`-label rendering.
+   * Exists so tests can be hermetic — Bun's `os.homedir()` ignores a
+   * mid-process `$HOME` change, so without injection a developer's real
+   * `~/.localcode/LOCALCODE.md` leaks into tmpdir fixtures.
+   */
+  homeDir?: string;
+}
+
 /**
  * Walk from `projectRoot` upward, collecting every `.localcode/LOCALCODE.md`
  * we encounter, then prepend the global `~/.localcode/LOCALCODE.md` (if any)
@@ -333,9 +345,12 @@ export interface LocalcodeMdHierarchyResult {
  * read_file" hint. Mixed mode is intentionally avoided — keeping the
  * decision binary makes the system prompt byte-stable across runs.
  */
-export function loadHierarchy(projectRoot: string): LocalcodeMdHierarchyResult {
+export function loadHierarchy(
+  projectRoot: string,
+  options?: LoadHierarchyOptions,
+): LocalcodeMdHierarchyResult {
   const absRoot = path.resolve(projectRoot);
-  const homeDir = path.resolve(os.homedir());
+  const homeDir = path.resolve(options?.homeDir ?? os.homedir());
 
   // Collect from project root up. Order at collection time = innermost first.
   const collected: HierarchyFile[] = [];
@@ -352,7 +367,7 @@ export function loadHierarchy(projectRoot: string): LocalcodeMdHierarchyResult {
     if (seen.has(current)) break; // already visited (shouldn't happen lexically)
     seen.add(current);
 
-    tryCollectAt(current, collected);
+    tryCollectAt(current, collected, homeDir);
 
     // Stop at $HOME — do not climb above the user's home directory.
     if (current === homeDir) break;
@@ -366,7 +381,7 @@ export function loadHierarchy(projectRoot: string): LocalcodeMdHierarchyResult {
   // collected array, and we reverse below so it lands first in output).
   // Skip if the project root is itself $HOME — we already grabbed it.
   if (absRoot !== homeDir && !seen.has(homeDir)) {
-    tryCollectAt(homeDir, collected);
+    tryCollectAt(homeDir, collected, homeDir);
   }
 
   if (collected.length === 0) {
@@ -408,7 +423,7 @@ export function loadHierarchy(projectRoot: string): LocalcodeMdHierarchyResult {
  * mode (missing dir, symlinked file, transient I/O error) — see
  * `loadHierarchy` race-safety notes.
  */
-function tryCollectAt(dir: string, acc: HierarchyFile[]): void {
+function tryCollectAt(dir: string, acc: HierarchyFile[], homeDir: string): void {
   const mdPath = path.join(dir, LOCALCODE_DIR, LOCALCODE_MD_FILE);
   // Guard with lstat to skip symlinked files (preventing reads outside the
   // intended walk via crafted links).
@@ -429,7 +444,7 @@ function tryCollectAt(dir: string, acc: HierarchyFile[]): void {
   }
   if (content.trim().length === 0) return; // empty file — ignore
 
-  const label = labelFor(dir, mdPath);
+  const label = labelFor(dir, mdPath, homeDir);
   acc.push({ absPath: mdPath, label, content });
 }
 
@@ -438,8 +453,8 @@ function tryCollectAt(dir: string, acc: HierarchyFile[]): void {
  * the inlined output. We prefer a tilde-prefixed path for files inside
  * `$HOME` (compact + recognisable) and an absolute path otherwise.
  */
-function labelFor(dir: string, absPath: string): string {
-  const home = os.homedir();
+function labelFor(dir: string, absPath: string, homeDir?: string): string {
+  const home = homeDir ?? os.homedir();
   if (absPath.startsWith(home + path.sep) || absPath === home) {
     return '~' + absPath.slice(home.length);
   }

@@ -1,41 +1,8 @@
 #!/usr/bin/env bash
 #
-# LocalCode installer
-# -------------------
-# One-command install (Claude-Code-style). Designed to be run either as a
-# clone-local script (./install.sh) OR piped from curl:
-#
-#   curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash
-#
-# Steps it performs end-to-end:
-#   1. Detect OS + arch (bail on unsupported).
-#   2. Ensure Bun >= 1.1 is installed (installs via official installer if missing).
-#   3. Fetch (or update) the repo into $LOCALCODE_HOME (~/.local/share/localcode).
-#   4. bun install && bun run build.
-#   5. Symlink dist/cli.js into a PATH directory:
-#        - first try $HOME/.local/bin/localcode (no sudo, preferred);
-#        - fall back to /usr/local/bin/localcode (sudo, explained first).
-#   6. Make `localcode` resolve everywhere with no manual step: add the
-#      bin dir to every shell rc (zsh/bash/profile/fish) for future
-#      shells, and best-effort link into /usr/local/bin (no-prompt sudo)
-#      so it also works in the current shell.
-#
-# Flags:
-#   --uninstall          remove the symlink and the install dir.
-#   --update             git pull + rebuild (works on existing install).
-#   --dir <path>         override install dir (default $HOME/.local/share/localcode).
-#   --from-source        skip the prebuilt-binary path entirely (always clone + build).
-#   --verbose            print each step's command output.
-#   --help, -h           show this help.
-#
-# Env:
-#   LOCALCODE_HOME       override install dir (same as --dir).
-#   LOCALCODE_REPO       override clone URL (default github.com/grosa787/localcode).
-#   LOCALCODE_REF        git ref / release tag to install. Default: latest GitHub release
-#                        (or `main` when --from-source is used).
-#   LOCALCODE_BIN_DIR    override symlink dir. Default: $HOME/.local/bin.
-#   LOCALCODE_FROM_SOURCE  same as --from-source when set to "1".
-#   LOCALCODE_RELEASE_BASE override release-asset URL prefix (default github.com).
+# LocalCode installer. Run `./install.sh --help` (or pipe from curl with
+# `| bash -s -- --help`) for the full usage text — it lives in usage()
+# below, NOT in this comment block, so the two can never drift apart.
 
 set -eu
 
@@ -60,7 +27,76 @@ LOCALCODE_REF="${LOCALCODE_REF:-}"
 
 VERBOSE=0
 MODE="install"
+FORCE=0
 FROM_SOURCE="${LOCALCODE_FROM_SOURCE:-0}"
+
+# How to re-invoke this installer, for hints we print. When piped from curl
+# `$0` is "bash" (or "-bash"), which is not a runnable path — fall back to the
+# documented one-liner instead of telling the user to run `bash --uninstall`.
+if [ -f "$0" ] && [ -r "$0" ]; then
+  SELF_CMD="$0"
+else
+  SELF_CMD="curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash -s --"
+fi
+
+# ---------- usage ----------
+# Printed from a heredoc, NOT sed'd out of "$0": under the documented
+# `curl … | bash` invocation the script has no file on disk, so any attempt
+# to read "$0" fails ("sed: bash: No such file or directory").
+usage() {
+  cat <<'USAGE'
+LocalCode installer
+-------------------
+One-command install. Run it from a clone (./install.sh) or piped from curl:
+
+  curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash
+
+When piping, flags must come after `-s --`, otherwise bash eats them:
+
+  curl -fsSL .../install.sh | bash -s -- --update
+
+What it does:
+  1. Detect OS + arch (bail on unsupported).
+  2. Download the prebuilt binary for your platform from the latest GitHub
+     release and verify it against the release SHA256SUMS.
+  3. If no usable prebuilt asset exists, fall back to a source build: ensure
+     Bun >= 1.1, clone/refresh the repo into $LOCALCODE_HOME
+     (default ~/.local/share/localcode), then `bun install && bun run build`.
+  4. Symlink the result into a PATH directory:
+       - first $HOME/.local/bin/localcode (no sudo, preferred);
+       - fall back to /usr/local/bin/localcode (sudo) if that is unwritable.
+  5. Add that bin dir to your shell rc files so `localcode` resolves in new
+     shells, and best-effort link it into /usr/local/bin (only when sudo
+     needs no prompt) so it resolves in the current one too.
+
+Flags:
+  --uninstall          remove the symlink and the install dir.
+  --update             refresh an existing install in place, using the same
+                       channel it was installed with: a prebuilt install
+                       re-downloads the latest release binary, a source
+                       install does git fetch + rebuild.
+  --dir <path>         override install dir (default $HOME/.local/share/localcode).
+  --from-source        skip the prebuilt-binary path entirely (always clone + build).
+  --force              re-download and re-verify the release binary even when
+                       the installed one already carries the target tag. Use
+                       this to repair a truncated or corrupted install.
+  --verbose            print each step's command output.
+  --help, -h           show this help.
+
+An existing install pins its channel. Re-running the installer over a source
+checkout keeps building from source rather than silently dropping a prebuilt
+binary beside the now-orphaned clone. Run --uninstall first to switch channels.
+
+Env:
+  LOCALCODE_HOME       override install dir (same as --dir).
+  LOCALCODE_REPO       override clone URL (default github.com/grosa787/localcode).
+  LOCALCODE_REF        git ref / release tag to install. Default: latest GitHub
+                       release (or `main` when --from-source is used).
+  LOCALCODE_BIN_DIR    override symlink dir. Default: $HOME/.local/bin.
+  LOCALCODE_FROM_SOURCE  same as --from-source when set to "1".
+  LOCALCODE_RELEASE_BASE override release-asset URL prefix (default github.com).
+USAGE
+}
 
 # ---------- arg parse ----------
 while [ $# -gt 0 ]; do
@@ -68,16 +104,17 @@ while [ $# -gt 0 ]; do
     --uninstall)   MODE="uninstall"; shift ;;
     --update)      MODE="update"; shift ;;
     --from-source) FROM_SOURCE=1; shift ;;
+    --force)       FORCE=1; shift ;;
     --verbose)     VERBOSE=1; shift ;;
     --dir)
       if [ $# -lt 2 ]; then echo "error: --dir requires a value" >&2; exit 2; fi
       LOCALCODE_HOME="$2"; shift 2 ;;
     --help|-h)
-      sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+      usage
       exit 0 ;;
     *)
       echo "error: unknown flag: $1" >&2
-      echo "run with --help for usage." >&2
+      echo "run '$SELF_CMD --help' for usage." >&2
       exit 2 ;;
   esac
 done
@@ -86,12 +123,29 @@ done
 log()  { printf '==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
+# Run a step quietly, but show its output if it fails.
+#
+# The old implementation was `"$@" >/dev/null 2>&1 || ( "$@" )` — it ran the
+# command a SECOND time to reveal the output. That is wrong for three reasons:
+# a failing step is executed twice (up to 4 `git clone` attempts against a bad
+# ref, two full `bun install`s), a command that fails only intermittently gets
+# silently papered over by the retry, and callers that redirect (`run git clone
+# … 2>/dev/null || run git clone …`) swallow the retry's output anyway, so the
+# whole point was defeated. Capture once, replay on failure.
 run() {
   if [ "$VERBOSE" -eq 1 ]; then
     ( set -x; "$@" )
-  else
-    "$@" >/dev/null 2>&1 || ( "$@" )
+    return $?
   fi
+  _run_log="$(mktemp "${TMPDIR:-/tmp}/localcode-run.XXXXXX" 2>/dev/null || printf '%s' "${TMPDIR:-/tmp}/localcode-run.$$")"
+  _run_status=0
+  "$@" >"$_run_log" 2>&1 || _run_status=$?
+  if [ "$_run_status" -ne 0 ]; then
+    printf 'command failed (exit %s): %s\n' "$_run_status" "$*" >&2
+    cat "$_run_log" >&2 2>/dev/null || true
+  fi
+  rm -f "$_run_log"
+  return "$_run_status"
 }
 
 # ---------- OS / arch detection ----------
@@ -225,6 +279,27 @@ install_prebuilt() {
   esac
 
   tag="$LOCALCODE_REF"
+
+  # Nothing to do if the installed binary already carries this tag — skip the
+  # ~13 MB download. The caller still runs install_symlink(), so a broken or
+  # missing symlink is repaired either way.
+  #
+  # --force bypasses the skip: the tag file says nothing about the binary's
+  # integrity, so a download truncated after `install -m 0755` (or a later
+  # corruption) would otherwise be unrepairable — every re-run would
+  # short-circuit and only re-point the symlink at the broken binary.
+  if [ "$FORCE" -ne 1 ] \
+    && [ -x "$LOCALCODE_HOME/bin/localcode" ] \
+    && [ -f "$LOCALCODE_HOME/.installed-tag" ]; then
+    installed_tag="$(cat "$LOCALCODE_HOME/.installed-tag" 2>/dev/null || true)"
+    if [ "$installed_tag" = "$tag" ]; then
+      BIN_TARGET="$LOCALCODE_HOME/bin/localcode"
+      log "already on $tag — nothing to download"
+      log "    if the binary is broken, re-run with --force to re-download and re-verify"
+      return 0
+    fi
+  fi
+
   asset="localcode-${OS}-${ARCH}.tar.gz"
   base="${LOCALCODE_RELEASE_BASE}/${slug}/releases/download/${tag}"
   asset_url="${base}/${asset}"
@@ -295,16 +370,46 @@ refusing to install."
   return 0
 }
 
+# ---------- install-kind detection ----------
+# Which channel is already installed at $LOCALCODE_HOME?
+#   source → a git clone we build with Bun (symlink points at dist/cli.js)
+#   binary → a prebuilt native binary dropped by install_prebuilt
+#   none   → nothing there yet
+# Both --update and the channel-pinning guard in main() key off this.
+detect_install_kind() {
+  if [ -d "$LOCALCODE_HOME/.git" ]; then
+    printf 'source'
+    return 0
+  fi
+  if [ -f "$LOCALCODE_HOME/.installed-tag" ] || [ -x "$LOCALCODE_HOME/bin/localcode" ]; then
+    printf 'binary'
+    return 0
+  fi
+  printf 'none'
+}
+
 # ---------- fetch / update ----------
 fetch_repo() {
   parent_dir="$(dirname "$LOCALCODE_HOME")"
   mkdir -p "$parent_dir"
   if [ -d "$LOCALCODE_HOME/.git" ]; then
     log "updating existing clone at $LOCALCODE_HOME"
-    ( cd "$LOCALCODE_HOME" && run git fetch --tags --depth=1 origin "$LOCALCODE_REF" )
-    ( cd "$LOCALCODE_HOME" && run git checkout -f "$LOCALCODE_REF" )
-    # if ref is a branch, fast-forward to remote tip
-    ( cd "$LOCALCODE_HOME" && run git reset --hard "origin/$LOCALCODE_REF" ) 2>/dev/null || true
+    # Try to land the ref in an explicit remote-tracking ref FIRST. A clone
+    # made by the pre-prebuilt installer used `--depth=1 --branch vX.Y.Z`,
+    # whose single-branch refspec never creates `refs/remotes/origin/main`
+    # — so a bare `git checkout -f main` has nothing to DWIM against and
+    # the source-channel update dies. Falls back to a plain fetch (which
+    # always populates FETCH_HEAD) when the ref is a tag or a sha.
+    ( cd "$LOCALCODE_HOME" && run git fetch --tags --depth=1 origin \
+        "+refs/heads/${LOCALCODE_REF}:refs/remotes/origin/${LOCALCODE_REF}" ) \
+      || ( cd "$LOCALCODE_HOME" && run git fetch --tags --depth=1 origin "$LOCALCODE_REF" )
+    # Branch → hard-reset a local branch onto the fetched remote tip.
+    # Tag / sha → check the ref out directly. Detached FETCH_HEAD is the
+    # last resort so a shallow clone with no local ref still updates.
+    ( cd "$LOCALCODE_HOME" && run git checkout -f -B "$LOCALCODE_REF" \
+        "refs/remotes/origin/$LOCALCODE_REF" ) 2>/dev/null \
+      || ( cd "$LOCALCODE_HOME" && run git checkout -f "$LOCALCODE_REF" ) 2>/dev/null \
+      || ( cd "$LOCALCODE_HOME" && run git checkout -f FETCH_HEAD )
     return 0
   fi
   if [ -e "$LOCALCODE_HOME" ] && [ ! -d "$LOCALCODE_HOME/.git" ]; then
@@ -498,14 +603,42 @@ main() {
     exit 0
   fi
 
+  INSTALL_KIND="$(detect_install_kind)"
+
+  # An existing install pins its channel, for both --update and a plain
+  # re-run. Without this, re-running the installer over a source checkout
+  # downloaded a prebuilt binary and re-pointed the symlink at it, leaving the
+  # git clone on disk, orphaned and silently stale.
+  if [ "$INSTALL_KIND" = "source" ] && [ "$FROM_SOURCE" -ne 1 ]; then
+    log "existing source install at $LOCALCODE_HOME -> staying on the source channel (git fetch + rebuild)"
+    log "    to switch to the prebuilt binary: $SELF_CMD --uninstall, then re-run the installer"
+    FROM_SOURCE=1
+  fi
+  if [ "$INSTALL_KIND" = "binary" ] && [ "$FROM_SOURCE" -eq 1 ]; then
+    die "$LOCALCODE_HOME holds a prebuilt-binary install, which --from-source cannot reuse.
+Run '$SELF_CMD --uninstall' first, or install elsewhere with --dir <path>."
+  fi
+  if [ "$MODE" = "update" ] && [ "$INSTALL_KIND" = "none" ]; then
+    die "nothing installed at $LOCALCODE_HOME — run the installer without --update first."
+  fi
+
   # Binary-first path: download prebuilt binary for the platform from the
   # latest (or specified) GitHub release. Falls back to source-build on any
-  # failure unless --from-source forced us there explicitly.
+  # failure unless --from-source forced us there explicitly. --update takes
+  # this same path for binary installs — it is how they refresh; sending them
+  # to the source branch made `--update` die on "not a git clone".
   USED_PREBUILT=0
-  if [ "$FROM_SOURCE" -ne 1 ] && [ "$MODE" != "update" ]; then
+  if [ "$FROM_SOURCE" -ne 1 ]; then
     mkdir -p "$LOCALCODE_HOME"
     if install_prebuilt; then
       USED_PREBUILT=1
+    elif [ "$INSTALL_KIND" = "binary" ]; then
+      # Never silently convert a working binary install into a source build:
+      # fetch_repo() would refuse the non-git dir anyway, and the user's
+      # current install still works. Leave it alone and say so.
+      die "could not refresh the prebuilt install at $LOCALCODE_HOME (see the warning above).
+Your existing install is untouched — retry when the network/release is available,
+or switch to a source build with: $SELF_CMD --uninstall   then   $SELF_CMD --from-source"
     else
       log "prebuilt-binary path unavailable; falling back to source-build"
       # The prebuilt attempt created $LOCALCODE_HOME (and possibly $LOCALCODE_HOME/bin)
@@ -563,8 +696,8 @@ main() {
     echo "      export PATH=\"$LOCALCODE_BIN_DIR:\$PATH\""
   fi
   echo ""
-  echo "  Re-run this installer any time to update."
-  echo "  Uninstall with: $0 --uninstall"
+  echo "  Update:    $SELF_CMD --update"
+  echo "  Uninstall: $SELF_CMD --uninstall"
 }
 
 main

@@ -116,17 +116,23 @@ Pick whichever channel fits your platform — all paths land at the same binary.
 ### Debian / Ubuntu (.deb)
 
 ```sh
-VER=0.20.0
+# Resolve the newest published release, so this snippet can never go stale.
+VER=$(curl -fsSL https://api.github.com/repos/grosa787/localcode/releases/latest \
+      | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)
+
 curl -fsSL -o localcode.deb \
   https://github.com/grosa787/localcode/releases/download/v${VER}/localcode_${VER}_amd64.deb
 sudo dpkg -i localcode.deb
 # arm64: replace amd64 with arm64 in the URL above.
+# To pin an older release instead, set VER by hand (e.g. `VER=0.24.0`).
 ```
 
 ### Fedora / RHEL (.rpm)
 
 ```sh
-VER=0.20.0
+VER=$(curl -fsSL https://api.github.com/repos/grosa787/localcode/releases/latest \
+      | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)
+
 sudo dnf install \
   https://github.com/grosa787/localcode/releases/download/v${VER}/localcode-${VER}-1.x86_64.rpm
 # arm64: replace x86_64 with aarch64.
@@ -159,23 +165,28 @@ See [docs/SCOOP.md](docs/SCOOP.md) for bucket-bootstrap and maintainer setup.
 ### One-command install script
 
 ```sh
-# Claude-Code-style installer (clones + builds with Bun)
+# Always installs the latest release — nothing to bump by hand
 curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash
 
-# Or pin a version / branch / tag
-curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | LOCALCODE_REF=v0.19.0 bash
+# Or pin an exact release tag (browse them at /releases)
+curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | LOCALCODE_REF=vX.Y.Z bash
 ```
 
-The installer detects your OS/arch, installs Bun if missing (via the official `bun.sh/install`), clones LocalCode into `~/.local/share/localcode`, runs `bun install && bun run build`, and symlinks `dist/cli.js`. It prefers `~/.local/bin` (no sudo); only if that directory isn't writable does it fall back to `/usr/local/bin` with `sudo`. Re-running the same command updates an existing install.
+The installer detects your OS/arch and, by default, downloads the **prebuilt binary** for your platform from the latest GitHub release, verifying it against the release `SHA256SUMS` before installing. If no usable prebuilt asset exists it falls back to a **source build**: it installs Bun if missing (via the official `bun.sh/install`), clones LocalCode into `~/.local/share/localcode`, and runs `bun install && bun run build`. Either way it symlinks the result into `~/.local/bin` (no sudo); only if that directory isn't writable does it fall back to `/usr/local/bin` with `sudo`.
 
-Flags & env overrides:
+An existing install **stays on the channel it was installed with** — re-running the installer over a source checkout keeps building from source instead of dropping a prebuilt binary beside the now-orphaned clone. Run `--uninstall` first to switch channels.
+
+Flags & env overrides. When piping from curl, flags must follow `-s --`, otherwise `bash` consumes them:
 
 ```sh
-curl -fsSL .../install.sh | bash -s -- --update      # git pull + rebuild
-curl -fsSL .../install.sh | bash -s -- --uninstall   # remove symlink + install dir
-curl -fsSL .../install.sh | bash -s -- --verbose     # debug output
-LOCALCODE_HOME=/opt/localcode bash install.sh        # custom install dir
-LOCALCODE_BIN_DIR=$HOME/bin bash install.sh          # custom PATH dir
+curl -fsSL .../install.sh | bash -s -- --update       # refresh in place (same channel)
+curl -fsSL .../install.sh | bash -s -- --uninstall    # remove symlink + install dir
+curl -fsSL .../install.sh | bash -s -- --from-source  # force clone + Bun build
+curl -fsSL .../install.sh | bash -s -- --force        # re-download + re-verify the binary
+curl -fsSL .../install.sh | bash -s -- --verbose      # show every step's output
+curl -fsSL .../install.sh | bash -s -- --help         # full usage text
+LOCALCODE_HOME=/opt/localcode bash install.sh         # custom install dir
+LOCALCODE_BIN_DIR=$HOME/bin bash install.sh           # custom PATH dir
 ```
 
 Manual install (existing clone):

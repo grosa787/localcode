@@ -145,6 +145,7 @@ import {
 import type { ToolContext } from '@/tools/types';
 
 import { ConfigManager } from '@/config/config-manager';
+import { mergeOnboardingResult } from '@/config/onboarding-merge';
 import {
   getMaxContextTokens,
   PROVIDER_DEFAULTS,
@@ -959,6 +960,29 @@ function App(props: AppProps): React.JSX.Element {
 
   // ---------- Services ----------
   const configManager = useMemo(() => new ConfigManager(), []);
+
+  // RECONFIGURE-LOCALE-SECTION — `--reconfigure` is the only boot path
+  // that mounts `onboarding` with a config already on disk, and the
+  // config-load effect deliberately returns early on that screen, so
+  // `config` stays null for the WHOLE flow. Without this seed
+  // `activeLocale` falls back to 'en' and a Russian user reads the
+  // entire re-onboarding in English (and `LocaleProvider` pushes 'en'
+  // into the module-level mirror, so non-React print paths follow).
+  //
+  // Read SYNCHRONOUSLY in a lazy initializer, not an effect: an effect
+  // paints one English frame before it lands. Gated on `startScreen`
+  // so the ordinary chat boot pays no extra TOML parse.
+  const [bootLocale] = useState<'en' | 'ru' | null>(() => {
+    if (startScreen !== 'onboarding') return null;
+    try {
+      if (!configManager.exists()) return null;
+      return configManager.read().locale ?? null;
+    } catch {
+      // Unreadable / corrupt config — English is the right fallback.
+      return null;
+    }
+  });
+  // RECONFIGURE-LOCALE-SECTION-END
   const sessionManager = useMemo(() => new SessionManager(), []);
 
   // JOURNAL-RECOVERY-SECTION (state)
@@ -994,10 +1018,39 @@ function App(props: AppProps): React.JSX.Element {
   // construction, same auto-approve list, no per-session WS event bus
   // (worker output reaches the UI via direct orchestrator events).
   const agentOrchestratorRef = useRef<AgentOrchestrator | null>(null);
+  // Worker model the memoised instance was built from. `''` marks an
+  // instance built from the first-run stub config (the language picker
+  // writes `model.current: ''` with no [agents] section before
+  // onboarding runs) — `/spawn` on such an instance would resolve an
+  // empty model name, so the next call rebuilds it as soon as a real
+  // model exists. A non-empty value is NEVER rebuilt: switching model or
+  // backend mid-session must not dispose live workers.
+  const agentOrchestratorModelRef = useRef<string>('');
+  // Bumped whenever the memoised instance is REPLACED (the stub → real
+  // rebuild, which disposes the old one). Subscribers list this in their
+  // effect deps so they re-bind instead of holding a subscription on a
+  // disposed orchestrator. Today the rebuild provably happens before the
+  // agent panel ever subscribes, but that only holds because configRef
+  // syncs before the session effect — an invariant no test pins. This
+  // makes the panel correct regardless of hook ordering.
+  const [agentOrchestratorEpoch, setAgentOrchestratorEpoch] =
+    useState<number>(0);
   const getAgentOrchestrator = useCallback((): AgentOrchestrator => {
     const existing = agentOrchestratorRef.current;
-    if (existing !== null) return existing;
-    const cfg = configRef.current ?? configManager.read();
+    // Fast path — never touches disk. `configManager.read()` throws when
+    // no config.toml exists yet, so only the build path may call it.
+    if (existing !== null && agentOrchestratorModelRef.current.length > 0) {
+      return existing;
+    }
+    let cfg: AppConfig;
+    try {
+      cfg = configRef.current ?? configManager.read();
+    } catch (err) {
+      // Keep a stub-built instance rather than crash the caller; the
+      // rebuild retries on the next call.
+      if (existing !== null) return existing;
+      throw err;
+    }
     // LM Studio defaults to 3 parallel slots; everything else keeps the
     // schema default of 5. The check is on the active backend at
     // construction time — switching backend mid-session does NOT
@@ -1012,6 +1065,13 @@ function App(props: AppProps): React.JSX.Element {
       approval: 'auto' as const,
       defaultTimeoutSec: 600,
     };
+    if (existing !== null) {
+      // Still no model → nothing better to build; keep the stub instance
+      // so callers that only need the WorktreeGC keep working.
+      if (agentsCfg.workerModel.length === 0) return existing;
+      void existing.disposeAll().catch(() => { /* best-effort */ });
+      agentOrchestratorRef.current = null;
+    }
     const created = new AgentOrchestrator({
       projectRoot,
       config: agentsCfg,
@@ -1060,6 +1120,13 @@ function App(props: AppProps): React.JSX.Element {
       }),
     });
     agentOrchestratorRef.current = created;
+    agentOrchestratorModelRef.current = agentsCfg.workerModel;
+    // Deferred — this getter is reachable from a render-phase caller and
+    // a synchronous setState there would throw. Fires at most once per
+    // mount (the fast path short-circuits once workerModel is non-empty).
+    if (existing !== null) {
+      queueMicrotask(() => setAgentOrchestratorEpoch((n) => n + 1));
+    }
     return created;
   }, [projectRoot, sessionManager, configManager]);
 
@@ -1071,6 +1138,8 @@ function App(props: AppProps): React.JSX.Element {
       if (orch === null) return;
       void orch.disposeAll().catch(() => { /* best-effort */ });
       agentOrchestratorRef.current = null;
+      // Keep the provenance marker in sync with the instance it describes.
+      agentOrchestratorModelRef.current = '';
     };
   }, []);
 
@@ -1078,23 +1147,41 @@ function App(props: AppProps): React.JSX.Element {
   // Sweep stale sub-agent worktrees left behind by previous crashed
   // runs. Fire-and-forget so a slow `git worktree remove` never blocks
   // the TUI. Errors are swallowed — the GC is non-essential.
+  const worktreeGcRanRef = useRef<boolean>(false);
   useEffect(() => {
-    const orch = agentOrchestratorRef.current ?? getAgentOrchestrator();
-    void orch
-      .getWorktreeGC()
-      .gcOrphans(projectRoot)
-      .then((res) => {
-        if (res.removed.length > 0) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[worktree-gc] removed ${res.removed.length} stale worktree(s)`,
-          );
-        }
-      })
-      .catch(() => {
-        /* best-effort */
-      });
-  }, [projectRoot, getAgentOrchestrator]);
+    // config.toml does not exist until onboarding writes it, and
+    // getAgentOrchestrator() reads it — on a fresh machine that throws
+    // inside the effect commit and kills the whole first launch. Gating
+    // on config (NOT on `screen`) does NOT keep the sweep out of
+    // onboarding: the language picker writes a stub config and calls
+    // setConfig BEFORE routing there, so the sweep does run on the
+    // onboarding screen. Harmless — it only touches
+    // <projectRoot>/.localcode/worktrees/, and the stub-built
+    // orchestrator is disposed and rebuilt by getAgentOrchestrator()
+    // once a real model exists.
+    if (config === null) return;
+    if (worktreeGcRanRef.current) return;
+    worktreeGcRanRef.current = true;
+    try {
+      const orch = getAgentOrchestrator();
+      void orch
+        .getWorktreeGC()
+        .gcOrphans(projectRoot)
+        .then((res) => {
+          if (res.removed.length > 0) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[worktree-gc] removed ${res.removed.length} stale worktree(s)`,
+            );
+          }
+        })
+        .catch(() => {
+          /* best-effort */
+        });
+    } catch {
+      /* best-effort — a GC sweep must never abort startup */
+    }
+  }, [projectRoot, getAgentOrchestrator, config]);
   // WORKTREE-GC-STARTUP-SECTION-END
 
   // AGENT-PANEL-SECTION (Wave 5A — TA team)
@@ -1150,7 +1237,9 @@ function App(props: AppProps): React.JSX.Element {
       setAgentWorkers([]);
       return undefined;
     }
-    const orch = agentOrchestratorRef.current ?? getAgentOrchestrator();
+    // Always through the getter — reading the ref directly would pin the
+    // subscription to a stale stub-built instance.
+    const orch = getAgentOrchestrator();
     const refresh = (): void => {
       const handles = orch.list(sessionId);
       const rows: AgentRow[] = handles.map((h) => {
@@ -1186,7 +1275,9 @@ function App(props: AppProps): React.JSX.Element {
     return (): void => {
       unsubscribe();
     };
-  }, [sessionId, getAgentOrchestrator]);
+    // `agentOrchestratorEpoch` re-binds the subscription when the stub
+    // instance is disposed and replaced.
+  }, [sessionId, getAgentOrchestrator, agentOrchestratorEpoch]);
 
   // Sound cues (FIX #29) — read from configRef at play time so live
   // config edits (e.g. future overlay) take effect without a rebuild.
@@ -2171,6 +2262,20 @@ function App(props: AppProps): React.JSX.Element {
   }, [configManager]);
   // TUTORIAL-MOUNT-SECTION-END
 
+  // CONFIG-ERROR-EXIT-SECTION — the startup-error splash short-circuits
+  // the render before any screen mounts, so it owns no key handling of
+  // its own, and cli.tsx mounts ink with `exitOnCtrlC: false` (App owns
+  // the exit flow) — raw-mode stdin therefore swallows ^C and no SIGINT
+  // is raised. Without this the splash is an unexitable dead end and the
+  // only way out is killing the process from another terminal.
+  useInput(
+    (input, key) => {
+      if (key.escape || input === 'q' || (key.ctrl && input === 'c')) exit();
+    },
+    { isActive: configLoadError !== null },
+  );
+  // CONFIG-ERROR-EXIT-SECTION-END
+
   // LANGUAGE-PICKER-MOUNT-SECTION — first-launch redirect.
   // When the app boots straight into onboarding (no config on disk
   // yet) we want the language picker to appear FIRST. This effect
@@ -2355,7 +2460,25 @@ function App(props: AppProps): React.JSX.Element {
   // loop, and wire a chokidar watcher (debounced 2s) so saved edits
   // trigger an incremental refresh. Every failure is swallowed — the
   // ontology is best-effort.
+  // Indexing the repo + a depth-8 watcher while the user is still on the
+  // first-run screens burns CPU during onboarding for no benefit. Latch
+  // instead of depending on `screen` directly: `/language` reopens the
+  // picker mid-session, and a re-run would dispose() the indexer for
+  // good (dispose is one-way; the instance is memoized on projectRoot).
+  const [ontologyArmed, setOntologyArmed] = useState<boolean>(false);
   useEffect(() => {
+    if (ontologyArmed) return;
+    if (
+      screen === 'splash' ||
+      screen === 'languagePicker' ||
+      screen === 'onboarding'
+    )
+      return;
+    setOntologyArmed(true);
+  }, [screen, ontologyArmed]);
+
+  useEffect(() => {
+    if (!ontologyArmed) return;
     let disposed = false;
     void (async (): Promise<void> => {
       try {
@@ -2394,7 +2517,7 @@ function App(props: AppProps): React.JSX.Element {
       void watcher.close();
       void ontologyIndexer.dispose().catch(() => { /* swallow */ });
     };
-  }, [ontologyIndexer, projectRoot]);
+  }, [ontologyIndexer, projectRoot, ontologyArmed]);
   // ONTOLOGY-WIRE-SECTION-END
 
   // ---------- Create / resume session once config is loaded ----------
@@ -5198,7 +5321,7 @@ function App(props: AppProps): React.JSX.Element {
         const targetAgentId = chatState.currentConversant;
         chatDispatch({ type: 'PUSH_HISTORY', text });
         try {
-          const orch = agentOrchestratorRef.current ?? getAgentOrchestrator();
+          const orch = getAgentOrchestrator();
           orch.postTeamMessage(
             sessionIdRef.current,
             LEAD_AGENT_ID,
@@ -5874,13 +5997,22 @@ function App(props: AppProps): React.JSX.Element {
   const onOnboardComplete = useCallback(
     (cfg: AppConfig): void => {
       try {
-        // Preserve any locale chosen via the language picker before
-        // onboarding ran (the picker stashes it on in-memory state
-        // when the config file did not yet exist).
-        const finalCfg: AppConfig =
-          config?.locale !== undefined && cfg.locale === undefined
-            ? { ...cfg, locale: config.locale }
-            : cfg;
+        // ONBOARDING-MERGE-SECTION — `--reconfigure` re-runs onboarding
+        // over an existing install, so the result must be overlaid on
+        // the persisted config, not written wholesale (see
+        // `mergeOnboardingResult`). Disk is the authority — a
+        // hand-edited config.toml beats our in-memory copy; `config` is
+        // the fallback for the first-run language-picker stub.
+        let base: AppConfig | null = null;
+        try {
+          if (configManager.exists()) base = configManager.read();
+        } catch {
+          // Corrupt / unreadable file — onboarding is the rescue path,
+          // so fall through and write the fresh config rather than
+          // refusing.
+        }
+        if (base === null) base = config;
+        const finalCfg: AppConfig = mergeOnboardingResult(base, cfg);
         configManager.write(finalCfg);
         setConfig(finalCfg);
         setConfigLoadError(null);
@@ -6833,14 +6965,21 @@ function App(props: AppProps): React.JSX.Element {
   // React tree. The provider keeps the module-level mirror in sync via
   // `useEffect`, so non-React print paths (slash commands) also pick
   // up the latest value automatically.
-  const activeLocale = config?.locale ?? 'en';
+  // RECONFIGURE-LOCALE-SECTION — `bootLocale` covers the window where
+  // `config` is still null because we mounted straight onto onboarding.
+  const activeLocale = config?.locale ?? bootLocale ?? 'en';
   const renderTree = (node: React.JSX.Element): React.JSX.Element => (
     <LocaleProvider locale={activeLocale}>{node}</LocaleProvider>
   );
   // LOCALE-APPLY-WIRE-SECTION-END
 
   // Startup error splash
-  if (configLoadError !== null && screen === 'chat') {
+  // Also render on 'onboarding': onOnboardComplete parks here after a
+  // failed config write, and a silent no-op looks like a hang.
+  if (
+    configLoadError !== null &&
+    (screen === 'chat' || screen === 'onboarding')
+  ) {
     // LOCALE-APPLY-WIRE-SECTION — error splash strings flow through the
     // i18n table so users see Russian copy when their persisted locale
     // is `ru` (the picker may have set it before the failed config load).
@@ -6851,6 +6990,10 @@ function App(props: AppProps): React.JSX.Element {
         <Box marginTop={1}>
           <Text color="gray">{appT('chat.reconfigureHint', undefined, activeLocale)}</Text>
         </Box>
+        {/* CONFIG-ERROR-EXIT-SECTION — advertise the handler above. */}
+        <Text color="gray">
+          {appT('chat.configErrorExitHint', undefined, activeLocale)}
+        </Text>
       </Box>
     );
   }
@@ -6877,7 +7020,7 @@ function App(props: AppProps): React.JSX.Element {
     case 'languagePicker':
       return renderTree(
         <LanguagePicker
-          initial={config?.locale ?? detectSystemLocale()}
+          initial={config?.locale ?? bootLocale ?? detectSystemLocale()}
           onSelect={onLanguageSelect}
         />
       );

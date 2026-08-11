@@ -29,3 +29,26 @@ test('app.tsx PKG_VERSION_FOR_UPDATER derives from package.json (not a literal)'
   expect(src).toContain('const PKG_VERSION_FOR_UPDATER = pkgJson.version;');
   expect(src).not.toMatch(/const PKG_VERSION_FOR_UPDATER\s*=\s*'[\d.]+'/);
 });
+
+/**
+ * The two literals this file did NOT cover, and which drifted anyway:
+ * `--web` pinned the updater to 0.19.0 (so every web launch staged a
+ * ~13 MB re-download of the release already running) and the splash
+ * greeted new users with 0.20.0.
+ */
+
+test('web/index.ts passes package.json version to the updater (not a literal)', async () => {
+  const src = await Bun.file(
+    new URL('../../src/web/index.ts', import.meta.url),
+  ).text();
+  expect(src).toContain('currentVersion: pkgJson.version');
+  expect(src).not.toMatch(/currentVersion:\s*'[\d.]+'/);
+});
+
+test('SplashScreen VERSION_LINE derives from package.json (not a literal)', async () => {
+  const src = await Bun.file(
+    new URL('../../src/ui/screens/SplashScreen.tsx', import.meta.url),
+  ).text();
+  expect(src).toContain('pkgJson.version');
+  expect(src).not.toMatch(/const VERSION_LINE\s*=\s*'v[\d.]+/);
+});

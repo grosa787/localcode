@@ -13,7 +13,7 @@
  * responsible for persisting it to disk.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { noxPalette, spinnerFrames, textMuted, theme } from '../theme.js';
@@ -403,9 +403,10 @@ function ApiKeyInput({
 
 interface ScanningProps {
   readonly url: string;
+  readonly onCancel: () => void;
 }
 
-function Scanning({ url }: ScanningProps): React.JSX.Element {
+function Scanning({ url, onCancel }: ScanningProps): React.JSX.Element {
   const [frame, setFrame] = useState<number>(0);
   // LOCALE-APPLY-SECTION
   const { t } = useT();
@@ -414,6 +415,20 @@ function Scanning({ url }: ScanningProps): React.JSX.Element {
     const h = setInterval(() => setFrame((f) => (f + 1) % spinnerFrames.length), 80);
     return () => clearInterval(h);
   }, []);
+
+  // Without an escape hatch an unreachable backend traps the user here:
+  // ink is mounted with exitOnCtrlC:false, so Ctrl+C is inert too. Esc
+  // only — it is the single key `onboarding.scanCancelHint` advertises,
+  // and an undocumented alias is just a surprise waiting to happen.
+  useInput(
+    useCallback(
+      (_input: string, key: { escape?: boolean }) => {
+        if (key.escape) onCancel();
+      },
+      [onCancel],
+    ),
+  );
+
   const glyph = spinnerFrames[frame] ?? spinnerFrames[0] ?? '⠋';
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -423,6 +438,11 @@ function Scanning({ url }: ScanningProps): React.JSX.Element {
         <Text> </Text>
         {/* LOCALE-APPLY-SECTION */}
         <Text color={noxPalette.white}>{t('onboarding.scanning', { url })}</Text>
+        {/* LOCALE-APPLY-SECTION-END */}
+      </Box>
+      <Box marginTop={1}>
+        {/* LOCALE-APPLY-SECTION */}
+        <Text color={textMuted}>{t('onboarding.scanCancelHint')}</Text>
         {/* LOCALE-APPLY-SECTION-END */}
       </Box>
     </Box>
@@ -525,6 +545,9 @@ function OnboardingScreen({
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  // Bumped on every scan start and on cancel — a scan whose token is
+  // stale must not write state after the user has left the screen.
+  const scanTokenRef = useRef<number>(0);
 
   const handleBackendPick = useCallback((choice: BackendChoice) => {
     if (choice.kind !== 'backend') return;
@@ -536,44 +559,34 @@ function OnboardingScreen({
     setStep('urlInput');
   }, []);
 
-  const handleUrlConfirm = useCallback((url: string) => {
-    setError(null);
-    setBaseUrl(url);
-    // Cloud providers + custom (optional) advance to the key step;
-    // local providers skip directly to scanning.
-    const requiresKey = PROVIDER_DEFAULTS[backend].requiresApiKey;
-    const supportsKey = requiresKey || backend === 'custom';
-    if (supportsKey) {
-      setStep('apiKeyInput');
-      return;
-    }
-    // Local — kick off scan immediately. We schedule it via a state
-    // transition then a micro-task; React will pick up the new state
-    // and our useEffect drives the actual scan.
-    setStep('scanning');
-  }, [backend]);
+  // Where a scan that did not reach 'done' drops the user. Cloud
+  // providers go back to the key step (retyping the URL would lose the
+  // key they just entered); local ones to the URL step. Shared by every
+  // failure path AND by cancel so the two cannot drift apart.
+  const fallbackStep = useCallback(
+    (): Step => (PROVIDER_DEFAULTS[backend].requiresApiKey ? 'apiKeyInput' : 'urlInput'),
+    [backend],
+  );
 
   const runScan = useCallback(
     async (url: string, key: string): Promise<void> => {
+      scanTokenRef.current += 1;
+      const token = scanTokenRef.current;
       setError(null);
       setBaseUrl(url);
       setStep('scanning');
       try {
         const reachable = await pingBackend(url);
+        if (scanTokenRef.current !== token) return;
         if (!reachable) {
           // LOCALE-APPLY-SECTION
           setError(t('onboarding.cantReach', { url }));
           // LOCALE-APPLY-SECTION-END
-          // Cloud → return to API key step; local → URL step. Errors
-          // typically point at one or the other depending on category.
-          if (PROVIDER_DEFAULTS[backend].requiresApiKey) {
-            setStep('apiKeyInput');
-          } else {
-            setStep('urlInput');
-          }
+          setStep(fallbackStep());
           return;
         }
         const fetched = await fetchModels(url);
+        if (scanTokenRef.current !== token) return;
         if (fetched.length === 0) {
           // LOCALE-APPLY-SECTION
           let hint = '';
@@ -590,9 +603,7 @@ function OnboardingScreen({
           }
           setError(t('onboarding.serverReachableNoModels', { hint }));
           // LOCALE-APPLY-SECTION-END
-          setStep(
-            PROVIDER_DEFAULTS[backend].requiresApiKey ? 'apiKeyInput' : 'urlInput',
-          );
+          setStep(fallbackStep());
           return;
         }
         // Pre-select the metadata default if it's in the list,
@@ -607,16 +618,45 @@ function OnboardingScreen({
         setApiKey(key);
         setStep('done');
       } catch (err) {
+        if (scanTokenRef.current !== token) return;
         const msg = err instanceof Error ? err.message : String(err);
         // LOCALE-APPLY-SECTION
         setError(t('onboarding.scanFailed', { msg }));
         // LOCALE-APPLY-SECTION-END
-        setStep(
-          PROVIDER_DEFAULTS[backend].requiresApiKey ? 'apiKeyInput' : 'urlInput',
-        );
+        setStep(fallbackStep());
       }
     },
-    [backend, pingBackend, fetchModels, t],
+    [fallbackStep, pingBackend, fetchModels, backend, t],
+  );
+
+  const handleScanCancel = useCallback((): void => {
+    // Invalidate the in-flight scan so a late ping/fetch cannot pull
+    // the user back out of the step we are about to land on.
+    scanTokenRef.current += 1;
+    setError(null);
+    // Same destination as a failed scan — cancelling must not cost a
+    // cloud user the API key they just typed.
+    setStep(fallbackStep());
+  }, [fallbackStep]);
+
+  const handleUrlConfirm = useCallback(
+    (url: string) => {
+      setError(null);
+      setBaseUrl(url);
+      // Cloud providers + custom (optional) advance to the key step;
+      // local providers skip directly to scanning.
+      const requiresKey = PROVIDER_DEFAULTS[backend].requiresApiKey;
+      const supportsKey = requiresKey || backend === 'custom';
+      if (supportsKey) {
+        setStep('apiKeyInput');
+        return;
+      }
+      // Local providers have no key step — run the scan directly. An
+      // earlier version only set the step and relied on an effect that
+      // never existed, so this screen hung forever.
+      void runScan(url, '');
+    },
+    [backend, runScan],
   );
 
   const handleApiKeySubmit = useCallback(
@@ -742,7 +782,7 @@ function OnboardingScreen({
       );
     }
     case 'scanning':
-      return <Scanning url={baseUrl} />;
+      return <Scanning url={baseUrl} onCancel={handleScanCancel} />;
     case 'done':
       return (
         <Done

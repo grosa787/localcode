@@ -688,11 +688,15 @@ async function main(): Promise<void> {
   // on disk). `--reconfigure` skips it because the user has already
   // seen LocalCode at least once. After splash the App transitions
   // through `languagePicker → onboarding → chat` like before.
-  const startScreen: 'splash' | 'onboarding' | 'chat' = !configExists
-    ? parsed.reconfigure
-      ? 'onboarding'
-      : 'splash'
-    : 'chat';
+  // `--reconfigure` always lands on onboarding — with a config on disk it
+  // used to fall through to 'chat', silently dropping the flag. The
+  // existing config is left untouched here; onboarding overwrites it via
+  // the normal completion path.
+  const startScreen: 'splash' | 'onboarding' | 'chat' = parsed.reconfigure
+    ? 'onboarding'
+    : configExists
+      ? 'chat'
+      : 'splash';
   // SPLASH-MOUNT-SECTION-END
 
   // R8 (Agent 8) — pre-mount silent model refresh. Only when we're

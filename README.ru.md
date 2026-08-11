@@ -116,17 +116,23 @@ localcode --web                      # браузерный UI (откроетс
 ### Debian / Ubuntu (.deb)
 
 ```sh
-VER=0.20.0
+# Определяем свежий релиз, чтобы сниппет не устаревал.
+VER=$(curl -fsSL https://api.github.com/repos/grosa787/localcode/releases/latest \
+      | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)
+
 curl -fsSL -o localcode.deb \
   https://github.com/grosa787/localcode/releases/download/v${VER}/localcode_${VER}_amd64.deb
 sudo dpkg -i localcode.deb
 # arm64: замените amd64 на arm64 в URL выше.
+# Чтобы поставить конкретную версию, задайте VER вручную (например, `VER=0.24.0`).
 ```
 
 ### Fedora / RHEL (.rpm)
 
 ```sh
-VER=0.20.0
+VER=$(curl -fsSL https://api.github.com/repos/grosa787/localcode/releases/latest \
+      | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)
+
 sudo dnf install \
   https://github.com/grosa787/localcode/releases/download/v${VER}/localcode-${VER}-1.x86_64.rpm
 # arm64: замените x86_64 на aarch64.
@@ -160,23 +166,28 @@ scoop install localcode
 ### Установка одной командой (скрипт)
 
 ```sh
-# Установщик в стиле Claude Code (клон + сборка через Bun)
+# Всегда ставит последний релиз — ничего не нужно править руками
 curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | bash
 
-# Или с привязкой к версии / ветке / тегу
-curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | LOCALCODE_REF=v0.19.0 bash
+# Или с привязкой к конкретному тегу релиза (список — на странице /releases)
+curl -fsSL https://raw.githubusercontent.com/grosa787/localcode/main/install.sh | LOCALCODE_REF=vX.Y.Z bash
 ```
 
-Скрипт определяет ОС и архитектуру, ставит Bun, если его нет (через официальный `bun.sh/install`), клонирует LocalCode в `~/.local/share/localcode`, выполняет `bun install && bun run build` и создаёт симлинк на `dist/cli.js`. Сначала пробует `~/.local/bin` (без sudo); только если каталог недоступен на запись, откатывается на `/usr/local/bin` через `sudo`. Повторный запуск той же команды обновляет существующую установку.
+Скрипт определяет ОС и архитектуру и по умолчанию скачивает **готовый бинарь** для вашей платформы из последнего GitHub-релиза, сверяя его с `SHA256SUMS` до установки. Если подходящего бинаря нет, происходит откат на **сборку из исходников**: ставится Bun (если его нет, через официальный `bun.sh/install`), LocalCode клонируется в `~/.local/share/localcode` и собирается через `bun install && bun run build`. В обоих случаях результат симлинкуется в `~/.local/bin` (без sudo); только если каталог недоступен на запись, происходит откат на `/usr/local/bin` через `sudo`.
 
-Флаги и переменные окружения:
+Уже установленная копия **остаётся на своём канале**: повторный запуск поверх клона исходников продолжит собирать из исходников, а не положит рядом готовый бинарь, осиротив клон. Чтобы сменить канал, сначала выполните `--uninstall`.
+
+Флаги и переменные окружения. При запуске через curl флаги обязаны идти после `-s --`, иначе их съест сам `bash`:
 
 ```sh
-curl -fsSL .../install.sh | bash -s -- --update      # git pull + пересборка
-curl -fsSL .../install.sh | bash -s -- --uninstall   # удалить симлинк и install-каталог
-curl -fsSL .../install.sh | bash -s -- --verbose     # подробный вывод
-LOCALCODE_HOME=/opt/localcode bash install.sh        # свой install-каталог
-LOCALCODE_BIN_DIR=$HOME/bin bash install.sh          # свой PATH-каталог
+curl -fsSL .../install.sh | bash -s -- --update       # обновить на месте (тот же канал)
+curl -fsSL .../install.sh | bash -s -- --uninstall    # удалить симлинк и install-каталог
+curl -fsSL .../install.sh | bash -s -- --from-source  # принудительно клон + сборка Bun
+curl -fsSL .../install.sh | bash -s -- --force        # перекачать и перепроверить бинарь
+curl -fsSL .../install.sh | bash -s -- --verbose      # показать вывод каждого шага
+curl -fsSL .../install.sh | bash -s -- --help         # полная справка
+LOCALCODE_HOME=/opt/localcode bash install.sh         # свой install-каталог
+LOCALCODE_BIN_DIR=$HOME/bin bash install.sh           # свой PATH-каталог
 ```
 
 Установка из существующего клона:

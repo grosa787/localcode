@@ -32,6 +32,7 @@ export const ru: StringTable = {
   'onboarding.apiKeyEnvHint':
     ' (или задайте ${var} в окружении оболочки)',
   'onboarding.scanning': 'Поиск моделей на {url}…',
+  'onboarding.scanCancelHint': 'Esc — отмена',
   'onboarding.connected': '✓ Подключено к {name}',
   'onboarding.availableModels': 'Доступные модели ({n}):',
   'onboarding.noModels':
@@ -96,6 +97,7 @@ export const ru: StringTable = {
   'chat.configLoadFailed': 'Не удалось загрузить конфиг.',
   'chat.reconfigureHint':
     'Выполните `localcode --reconfigure` чтобы пройти онбординг заново.',
+  'chat.configErrorExitHint': 'Нажмите Esc, q или Ctrl+C для выхода.',
 
   // ---------- Меню слэш-команд ----------
   'slash.noMatch': 'Нет команд по запросу "{query}"',
@@ -358,4 +360,32 @@ export const ru: StringTable = {
   'presence.typing.many': '{n} человек печатают…',
   'presence.peers': '{n} участников',
   // PRESENCE-SECTION-END
+
+  // TUTORIAL-SECTION — вводный тур при первом запуске (`TutorialOverlay`,
+  // также открывается командой `/tutorial`).
+  'tutorial.title': 'Быстрый тур',
+  'tutorial.progress': 'Шаг {n} из {total}',
+  'tutorial.focus': '↳ Что смотреть: {name}',
+  'tutorial.footer': '← назад  ·  Enter / → дальше  ·  Esc / q пропустить',
+  'tutorial.step1.title': '1. Просто пишите',
+  'tutorial.step1.body':
+    'Строка ввода внизу — это ваш диалог с моделью. Нажмите /, чтобы открыть меню команд.',
+  'tutorial.step1.hint': 'Строка ввода',
+  'tutorial.step2.title': '2. Слэш-команды',
+  'tutorial.step2.body':
+    '/model — сменить модель, /usage — посмотреть расход токенов, /spawn — передать задачу саб-агенту.',
+  'tutorial.step2.hint': 'Меню команд',
+  'tutorial.step3.title': '3. Память проекта',
+  'tutorial.step3.body':
+    'Долговременные заметки о проекте живут в /memory. Сохраните важный контекст один раз — и он будет под рукой всегда.',
+  'tutorial.step3.hint': 'Память',
+  'tutorial.step4.title': '4. Агенты-специалисты',
+  'tutorial.step4.body':
+    'Запускайте узкопрофильных агентов через /spawn <роль>. Например, /spawn architect — помощь с архитектурой.',
+  'tutorial.step4.hint': 'Агенты',
+  'tutorial.step5.title': '5. Готово',
+  'tutorial.step5.body':
+    'Это весь тур. Нажмите Enter и начинайте работу. Открыть его снова можно командой /tutorial.',
+  'tutorial.step5.hint': 'Финиш',
+  // TUTORIAL-SECTION-END
 };

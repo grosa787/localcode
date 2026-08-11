@@ -35,6 +35,7 @@ export const en = {
     'API key required for {name}{envHint}.',
   'onboarding.apiKeyEnvHint': ' (or set ${var} in your shell)',
   'onboarding.scanning': 'Scanning models at {url}…',
+  'onboarding.scanCancelHint': 'Esc to cancel',
   'onboarding.connected': '✓ Connected to {name}',
   'onboarding.availableModels': 'Available models ({n}):',
   'onboarding.noModels':
@@ -97,6 +98,7 @@ export const en = {
   'chat.configLoadFailed': 'Failed to load config.',
   'chat.reconfigureHint':
     'Run `localcode --reconfigure` to re-run onboarding.',
+  'chat.configErrorExitHint': 'Press Esc, q or Ctrl+C to quit.',
 
   // ---------- Slash menu ----------
   'slash.noMatch': 'No commands match "{query}"',
@@ -355,6 +357,35 @@ export const en = {
   'presence.typing.many': '{n} peers are typing…',
   'presence.peers': '{n} peers',
   // PRESENCE-SECTION-END
+
+  // TUTORIAL-SECTION — first-run walkthrough (`TutorialOverlay`, also
+  // re-openable via `/tutorial`). Step copy is resolved per render so a
+  // `/language` switch mid-tour flips the visible cards immediately.
+  'tutorial.title': 'Welcome tour',
+  'tutorial.progress': 'Step {n} of {total}',
+  'tutorial.focus': '↳ Focus: {name}',
+  'tutorial.footer': '← back  ·  Enter / → next  ·  Esc / q skip',
+  'tutorial.step1.title': '1. Type to chat',
+  'tutorial.step1.body':
+    'The input bar at the bottom is your conversation with the model. Press / to open the command menu.',
+  'tutorial.step1.hint': 'Input bar',
+  'tutorial.step2.title': '2. Slash commands',
+  'tutorial.step2.body':
+    'Try /model to switch models, /usage to see token cost, /spawn to delegate to a sub-agent.',
+  'tutorial.step2.hint': 'Slash menu',
+  'tutorial.step3.title': '3. Project memory',
+  'tutorial.step3.body':
+    'Long-term notes about this project live in /memory. Save important context once, recall it forever.',
+  'tutorial.step3.hint': 'Memory',
+  'tutorial.step4.title': '4. Specialist agents',
+  'tutorial.step4.body':
+    'Spawn focused workers with /spawn <role>. Try /spawn architect for high-level design help.',
+  'tutorial.step4.hint': 'Agents',
+  'tutorial.step5.title': '5. Ready to roll',
+  'tutorial.step5.body':
+    "That's the tour. Press Enter to start chatting. You can re-open this anytime with /tutorial.",
+  'tutorial.step5.hint': 'Done',
+  // TUTORIAL-SECTION-END
 } as const;
 
 export type StringKey = keyof typeof en;

@@ -18,9 +18,16 @@
  * Also re-invoked on demand via the `/tutorial` slash command.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { noxPalette, textMuted } from '../theme.js';
+// LOCALE-APPLY-SECTION — the walkthrough is the very first screen a new
+// user sees after picking a language, so every word here must follow
+// `config.locale`. Copy lives in the string tables; this module only
+// holds the key order.
+import { useT } from '../../i18n/index.js';
+import type { StringKey } from '../../i18n/strings/en.js';
+// LOCALE-APPLY-SECTION-END
 
 export interface TutorialStep {
   readonly title: string;
@@ -28,33 +35,57 @@ export interface TutorialStep {
   readonly hint?: string;
 }
 
-export const TUTORIAL_STEPS: readonly TutorialStep[] = [
+/** String-table keys backing one card. Resolved at render time. */
+export interface TutorialStepKeys {
+  readonly titleKey: StringKey;
+  readonly bodyKey: StringKey;
+  readonly hintKey?: StringKey;
+}
+
+export const TUTORIAL_STEP_KEYS: readonly TutorialStepKeys[] = [
   {
-    title: '1. Type to chat',
-    body: 'The input bar at the bottom is your conversation with the model. Press / to open the command menu.',
-    hint: 'InputBar',
+    titleKey: 'tutorial.step1.title',
+    bodyKey: 'tutorial.step1.body',
+    hintKey: 'tutorial.step1.hint',
   },
   {
-    title: '2. Slash commands',
-    body: 'Try /model to switch models, /usage to see token cost, /spawn to delegate to a sub-agent.',
-    hint: 'Slash menu',
+    titleKey: 'tutorial.step2.title',
+    bodyKey: 'tutorial.step2.body',
+    hintKey: 'tutorial.step2.hint',
   },
   {
-    title: '3. Project memory',
-    body: 'Long-term notes about this project live in /memory. Save important context once, recall it forever.',
-    hint: 'Memory',
+    titleKey: 'tutorial.step3.title',
+    bodyKey: 'tutorial.step3.body',
+    hintKey: 'tutorial.step3.hint',
   },
   {
-    title: '4. Specialist agents',
-    body: 'Spawn focused workers with /spawn <role>. Try /spawn architect for high-level design help.',
-    hint: 'Agents',
+    titleKey: 'tutorial.step4.title',
+    bodyKey: 'tutorial.step4.body',
+    hintKey: 'tutorial.step4.hint',
   },
   {
-    title: '5. Ready to roll',
-    body: "That's the tour. Press Enter to start chatting. You can re-open this anytime with /tutorial.",
-    hint: 'Done',
+    titleKey: 'tutorial.step5.title',
+    bodyKey: 'tutorial.step5.body',
+    hintKey: 'tutorial.step5.hint',
   },
 ] as const;
+
+export const TUTORIAL_STEP_COUNT: number = TUTORIAL_STEP_KEYS.length;
+
+/**
+ * Materialise the cards for the active locale. Kept as a free function
+ * (not a hook) so non-React callers and tests can resolve the copy with
+ * an explicit translator.
+ */
+export function resolveTutorialSteps(
+  translate: (key: StringKey) => string,
+): readonly TutorialStep[] {
+  return TUTORIAL_STEP_KEYS.map((keys) => ({
+    title: translate(keys.titleKey),
+    body: translate(keys.bodyKey),
+    ...(keys.hintKey !== undefined ? { hint: translate(keys.hintKey) } : {}),
+  }));
+}
 
 export interface TutorialOverlayProps {
   /**
@@ -72,16 +103,20 @@ function TutorialOverlay({
   onDone,
   initialStep = 0,
 }: TutorialOverlayProps): React.JSX.Element {
-  const safeInitial = Math.max(
-    0,
-    Math.min(initialStep, TUTORIAL_STEPS.length - 1),
-  );
+  // LOCALE-APPLY-SECTION
+  const { t } = useT();
+  // `t` is memoised on the active locale, so the cards are rebuilt only
+  // when the user actually switches language.
+  const steps = useMemo(() => resolveTutorialSteps(t), [t]);
+  // LOCALE-APPLY-SECTION-END
+
+  const safeInitial = Math.max(0, Math.min(initialStep, steps.length - 1));
   const [step, setStep] = useState<number>(safeInitial);
-  const finished = step >= TUTORIAL_STEPS.length;
+  const finished = step >= steps.length;
 
   const advance = useCallback((): void => {
     setStep((s) => {
-      if (s + 1 >= TUTORIAL_STEPS.length) {
+      if (s + 1 >= TUTORIAL_STEP_KEYS.length) {
         // Defer onDone to the next tick so React doesn't fire it inside
         // the input handler (avoids "setState during render" footguns).
         queueMicrotask(onDone);
@@ -137,19 +172,21 @@ function TutorialOverlay({
     return <Box />;
   }
 
-  const current = TUTORIAL_STEPS[step] ?? TUTORIAL_STEPS[0];
+  const current = steps[step] ?? steps[0];
   if (current === undefined) {
     return <Box />;
   }
-  const total = TUTORIAL_STEPS.length;
-  const progress = `Step ${step + 1} of ${total}`;
+  const total = steps.length;
+  const progress = t('tutorial.progress', { n: step + 1, total });
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
       <Box>
-        <Text color={textMuted}>Welcome tour</Text>
+        {/* LOCALE-APPLY-SECTION */}
+        <Text color={textMuted}>{t('tutorial.title')}</Text>
         <Text color={textMuted}>{'  ·  '}</Text>
         <Text color={noxPalette.highlight}>{progress}</Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
       <Box
         flexDirection="column"
@@ -167,14 +204,20 @@ function TutorialOverlay({
         </Box>
         {current.hint !== undefined ? (
           <Box marginTop={1}>
-            <Text color={textMuted}>↳ Focus: {current.hint}</Text>
+            {/* LOCALE-APPLY-SECTION */}
+            <Text color={textMuted}>
+              {t('tutorial.focus', { name: current.hint })}
+            </Text>
+            {/* LOCALE-APPLY-SECTION-END */}
           </Box>
         ) : null}
       </Box>
       <Box marginTop={1}>
+        {/* LOCALE-APPLY-SECTION */}
         <Text color={textMuted} dimColor>
-          ← back  ·  Enter / → next  ·  Esc / q skip
+          {t('tutorial.footer')}
         </Text>
+        {/* LOCALE-APPLY-SECTION-END */}
       </Box>
     </Box>
   );
@@ -182,8 +225,11 @@ function TutorialOverlay({
 
 export default TutorialOverlay;
 
-// Test-only surface so unit tests can introspect the step list
-// without redeclaring magic strings.
+// Test-only surface so unit tests can introspect the step list without
+// redeclaring magic strings. Copy is locale-dependent now, so tests get
+// the key order plus the resolver instead of a frozen English array.
 export const __test__ = {
-  TUTORIAL_STEPS,
+  TUTORIAL_STEP_KEYS,
+  TUTORIAL_STEP_COUNT,
+  resolveTutorialSteps,
 };
