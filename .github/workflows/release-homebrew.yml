@@ -6,18 +6,20 @@ name: Homebrew Tap Update
 #   brew install grosa787/tap/localcode
 #
 # Trigger:
-#   - `v*` tag push (after release.yml has uploaded the tarballs + SHA256SUMS)
+#   - when the GitHub Release is PUBLISHED. NOT the `v*` tag push: that fires
+#     simultaneously with release.yml, so the tarballs are not there yet.
 #   - manual workflow_dispatch (for re-running against an existing release)
 #
-# Required secret:
+# Optional secret:
 #   HOMEBREW_TAP_PAT — a fine-grained Personal Access Token with
 #     `contents: write` permission on the grosa787/homebrew-tap repo.
+#   Without it every step is skipped and the job goes green — the tap is an
+#   optional channel and must not red an otherwise-healthy release.
 #   See docs/HOMEBREW.md for one-time maintainer setup.
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -37,12 +39,33 @@ jobs:
     name: Render formula & push to tap
     runs-on: ubuntu-latest
     steps:
+      # Homebrew is an OPTIONAL distribution channel. Without the tap PAT we
+      # skip every step instead of failing, so an unconfigured channel never
+      # reds an otherwise-healthy release. Must be a STEP-level gate: the
+      # `secrets` context is not available in a job-level `if:`.
+      - name: Check for the tap secret
+        id: gate
+        env:
+          HOMEBREW_TAP_PAT: ${{ secrets.HOMEBREW_TAP_PAT }}
+        run: |
+          set -eu
+          if [ -z "${HOMEBREW_TAP_PAT:-}" ]; then
+            echo "::notice::HOMEBREW_TAP_PAT is not set — skipping tap update."
+            echo "To enable: create a fine-grained PAT with contents: write on"
+            echo "grosa787/homebrew-tap and add it as secret HOMEBREW_TAP_PAT."
+            echo "configured=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >>"$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout source repo (template lives here)
+        if: steps.gate.outputs.configured == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Resolve tag and version
+        if: steps.gate.outputs.configured == 'true'
         id: meta
         shell: bash
         run: |
@@ -63,6 +86,7 @@ jobs:
       # release.yml runs in parallel on tag push; wait until SHA256SUMS exists
       # on the GitHub Release before we try to render. Bounded to ~30 minutes.
       - name: Wait for release artifacts to be published
+        if: steps.gate.outputs.configured == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
@@ -86,6 +110,7 @@ jobs:
           done
 
       - name: Download SHA256SUMS from release
+        if: steps.gate.outputs.configured == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
@@ -98,6 +123,7 @@ jobs:
           cat artifacts/SHA256SUMS
 
       - name: Extract per-tarball SHA-256
+        if: steps.gate.outputs.configured == 'true'
         id: sums
         shell: bash
         run: |
@@ -127,6 +153,7 @@ jobs:
           echo "  linux-x64    = $LINUX_X64"
 
       - name: Render formula from template
+        if: steps.gate.outputs.configured == 'true'
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -154,6 +181,7 @@ jobs:
           fi
 
       - name: Checkout tap repository
+        if: steps.gate.outputs.configured == 'true'
         uses: actions/checkout@v4
         with:
           repository: grosa787/homebrew-tap
@@ -162,6 +190,7 @@ jobs:
           fetch-depth: 1
 
       - name: Copy rendered formula into tap repo
+        if: steps.gate.outputs.configured == 'true'
         shell: bash
         run: |
           set -eu
@@ -170,6 +199,7 @@ jobs:
           ls -la tap/Formula/
 
       - name: Commit and push to tap
+        if: steps.gate.outputs.configured == 'true'
         shell: bash
         working-directory: tap
         env:

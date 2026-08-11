@@ -4,22 +4,23 @@ name: Release Scoop Manifest
 # external `grosa787/scoop-bucket` repository after a `v*` release lands.
 #
 # Trigger:
-#   - on `v*` tag push (after release.yml has uploaded Windows artifacts)
+#   - when the GitHub Release is PUBLISHED. NOT on the `v*` tag push: that
+#     fires simultaneously with release.yml, so the assets this workflow
+#     consumes may not exist yet.
 #   - manual via workflow_dispatch (re-run against an existing release)
 #
 # Pre-requisites:
-#   1. The release tagged `v<version>` must already exist on GitHub Releases and
-#      must contain at least `localcode-win-x64.zip` plus its `.sha256` sidecar
-#      (uploaded by release.yml's WINDOWS-BUILD-SECTION job).
-#   2. Repository secret `SCOOP_BUCKET_PAT` must be set to a fine-grained PAT
-#      with `Contents: read+write` permission on `grosa787/scoop-bucket`.
-#      If the secret is missing the job exits with a clear error instead of
-#      silently failing.
+#   1. The release tagged `v<version>` must contain at least
+#      `localcode-win-x64.zip` plus its `.sha256` sidecar (uploaded by
+#      release.yml's WINDOWS-BUILD-SECTION job).
+#   2. Repository secret `SCOOP_BUCKET_PAT` — a fine-grained PAT with
+#      `Contents: read+write` on `grosa787/scoop-bucket`. Scoop is an
+#      OPTIONAL channel: without the secret every step is skipped and the
+#      job goes green, so an unconfigured channel never reds a release.
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -39,25 +40,34 @@ jobs:
     name: Publish Scoop manifest
     runs-on: ubuntu-latest
     steps:
-      - name: Verify required secret
+      # Scoop is an OPTIONAL distribution channel. When the PAT is absent we
+      # skip the remaining steps instead of failing: a maintainer who never
+      # set up a scoop bucket should not get a red X on every healthy release.
+      # This has to be a STEP-level gate — the `secrets` context is not
+      # available in a job-level `if:` (only github/needs/vars/inputs are).
+      - name: Check for the publishing secret
+        id: gate
         env:
           SCOOP_BUCKET_PAT: ${{ secrets.SCOOP_BUCKET_PAT }}
         run: |
           set -eu
           if [ -z "${SCOOP_BUCKET_PAT:-}" ]; then
-            echo "::error::Repository secret SCOOP_BUCKET_PAT is not set."
-            echo "Create a fine-grained PAT with Contents: read+write on grosa787/scoop-bucket"
-            echo "and add it as a repository secret named SCOOP_BUCKET_PAT."
-            exit 1
+            echo "::notice::SCOOP_BUCKET_PAT is not set — skipping Scoop publish."
+            echo "To enable: create a fine-grained PAT with Contents: read+write"
+            echo "on grosa787/scoop-bucket and add it as secret SCOOP_BUCKET_PAT."
+            echo "configured=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >>"$GITHUB_OUTPUT"
           fi
-          echo "SCOOP_BUCKET_PAT is configured"
 
       - name: Checkout source repo (for manifest template)
+        if: steps.gate.outputs.configured == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Resolve tag and version
+        if: steps.gate.outputs.configured == 'true'
         id: meta
         shell: bash
         run: |
@@ -76,6 +86,7 @@ jobs:
           echo "Resolved tag=$TAG version=$VERSION"
 
       - name: Download Windows release assets
+        if: steps.gate.outputs.configured == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -104,6 +115,7 @@ jobs:
           fi
 
       - name: Verify checksums
+        if: steps.gate.outputs.configured == 'true'
         shell: bash
         run: |
           set -eu
@@ -118,6 +130,7 @@ jobs:
           fi
 
       - name: Compute hashes
+        if: steps.gate.outputs.configured == 'true'
         id: hashes
         shell: bash
         run: |
@@ -136,6 +149,7 @@ jobs:
           fi
 
       - name: Render manifest from template
+        if: steps.gate.outputs.configured == 'true'
         id: render
         shell: bash
         env:
@@ -191,6 +205,7 @@ jobs:
           echo "Rendered manifest validated"
 
       - name: Checkout scoop bucket repo
+        if: steps.gate.outputs.configured == 'true'
         uses: actions/checkout@v4
         with:
           repository: grosa787/scoop-bucket
@@ -199,6 +214,7 @@ jobs:
           fetch-depth: 1
 
       - name: Copy manifest into bucket
+        if: steps.gate.outputs.configured == 'true'
         shell: bash
         run: |
           set -eu
@@ -208,6 +224,7 @@ jobs:
           cat scoop-bucket/bucket/localcode.json
 
       - name: Commit and push to scoop-bucket
+        if: steps.gate.outputs.configured == 'true'
         shell: bash
         env:
           TAG: ${{ steps.meta.outputs.tag }}

@@ -5,13 +5,15 @@ name: Packages (deb/rpm)
 # as assets to the same GitHub Release.
 #
 # Trigger:
-#   - on `v*` tag push (after release.yml has finished uploading its tarballs)
+#   - when the GitHub Release is PUBLISHED, not on the `v*` tag push. Both
+#     fire off the same tag, so a push trigger raced release.yml and died on
+#     `gh release download: release not found` (v0.26.0). The release event is
+#     the only signal that the tarballs this workflow consumes actually exist.
 #   - manual via workflow_dispatch (for re-running against an existing release)
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -41,10 +43,17 @@ jobs:
 
       - name: Resolve tag and version
         id: meta
+        env:
+          # Via env, never interpolated into the script body (workflow-injection
+          # hygiene). RELEASE_TAG is empty on workflow_dispatch.
+          INPUT_TAG: ${{ inputs.tag || '' }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || '' }}
         run: |
           set -eu
-          if [ -n "${{ inputs.tag || '' }}" ]; then
-            TAG="${{ inputs.tag }}"
+          if [ -n "${INPUT_TAG}" ]; then
+            TAG="${INPUT_TAG}"
+          elif [ -n "${RELEASE_TAG}" ]; then
+            TAG="${RELEASE_TAG}"
           else
             TAG="${GITHUB_REF_NAME}"
           fi
