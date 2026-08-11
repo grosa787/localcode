@@ -61,6 +61,7 @@ const PROVIDERS_ORDER: Backend[] = [
   'anthropic',
   'openrouter',
   'google',
+  'unsloth',
   'custom',
 ];
 
@@ -71,25 +72,36 @@ const DISPLAY: Record<Backend, string> = {
   anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
   google: 'Google Gemini',
+  unsloth: 'Unsloth Studio (local)',
   custom: 'Custom (OpenAI-compat)',
 };
 
-const LOCAL: ReadonlySet<Backend> = new Set(['ollama', 'lmstudio']);
+/**
+ * Runs on the user's machine — drives the row ICON (Cpu vs Cloud).
+ * `unsloth` is local by this measure.
+ */
+const LOCAL: ReadonlySet<Backend> = new Set(['ollama', 'lmstudio', 'unsloth']);
+
+/**
+ * Needs no credentials. Deliberately NOT the same set as {@link LOCAL}:
+ * Unsloth Studio listens on localhost and still rejects unauthenticated
+ * requests with 401, so it must keep the "paste a key" flow.
+ */
+const KEYLESS: ReadonlySet<Backend> = new Set(['ollama', 'lmstudio']);
 
 /**
  * We can't read env vars from the browser. The dot is "green" for the
  * currently active backend (the server already configured it) and for
- * any local provider; otherwise we treat it as "needs key".
+ * any keyless provider; otherwise we treat it as "needs key".
  */
 function buildEntries(active: Backend | null): ProviderEntry[] {
   return PROVIDERS_ORDER.map((id) => {
-    const isLocal = LOCAL.has(id);
     const isActive = id === active;
     return {
       id,
       display: DISPLAY[id],
-      isLocal,
-      needsKey: !isLocal && !isActive,
+      isLocal: LOCAL.has(id),
+      needsKey: !KEYLESS.has(id) && !isActive,
     };
   });
 }
@@ -238,6 +250,18 @@ export function ProviderPicker({
                   <ChevronRight size={14} strokeWidth={1.5} />
                 )}
               </button>
+              {/* Unsloth's server runs its own tool loop unless launched
+                  with --disable-tools, and LocalCode drives everything
+                  through tool calls. The failure is silent (model looks
+                  idle), so the note sits on the row itself — the toast
+                  after switching is too easy to miss. */}
+              {e.id === 'unsloth' ? (
+                <div className={styles.note}>
+                  <strong>{t('provider.unsloth.disableTools.title')}</strong>
+                  <span>{t('provider.unsloth.disableTools.body')}</span>
+                  <code>{t('provider.unsloth.disableTools.command')}</code>
+                </div>
+              ) : null}
               {keyEntry !== null && keyEntry.backend === e.id ? (
                 <div className={styles.keyRow}>
                   <input

@@ -124,6 +124,11 @@ export const PROVIDER_DEFAULTS: Record<
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     requiresApiKey: true,
   },
+  // First and only local-BUT-keyed provider. Unsloth Studio serves an
+  // OpenAI-compatible API on localhost yet rejects unauthenticated
+  // requests, so `requiresApiKey` is the honest signal here — never
+  // infer "no key needed" from "runs locally" for this row.
+  unsloth: { baseUrl: 'http://localhost:8888/v1', requiresApiKey: true },
   // Empty until the user supplies one. `BackendSchema` accepts the
   // empty literal so this round-trips through validation cleanly.
   custom: { baseUrl: '', requiresApiKey: false },
@@ -140,12 +145,18 @@ export const PROVIDER_DEFAULTS: Record<
  *   config doesn't have an explicit `apiKey`. Following each
  *   provider's published convention (`OPENAI_API_KEY`,
  *   `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`).
+ * - `apiKeyEnvVarAliases` — additional env vars accepted by
+ *   `resolveApiKey()` after `apiKeyEnvVar` misses. Exists so a provider
+ *   whose own tooling exports a differently-named variable still works
+ *   out of the box, while every UI keeps showing the single canonical
+ *   `apiKeyEnvVar` name.
  * - `apiKeyHelp` — one-line hint shown below the key field in the UI.
  */
 export interface ProviderMeta {
   displayName: string;
   defaultModel?: string;
   apiKeyEnvVar?: string;
+  apiKeyEnvVarAliases?: readonly string[];
   apiKeyHelp?: string;
 }
 
@@ -177,6 +188,16 @@ export const PROVIDER_META: Record<Backend, ProviderMeta> = {
     apiKeyEnvVar: 'GEMINI_API_KEY',
     apiKeyHelp: 'Get key at aistudio.google.com/apikey',
   },
+  unsloth: {
+    // No `defaultModel`: ids are whatever GGUF repo the user pulled
+    // (e.g. `unsloth/qwen3-coder-30B-GGUF`), so guessing one would
+    // pre-select a model the server cannot serve.
+    displayName: 'Unsloth Studio (local)',
+    apiKeyEnvVar: 'UNSLOTH_API_KEY',
+    apiKeyEnvVarAliases: ['UNSLOTH_STUDIO_AUTH_TOKEN'],
+    apiKeyHelp:
+      'Settings -> API in Unsloth Studio, or printed by `unsloth run`. Launch with --disable-tools.',
+  },
   custom: {
     displayName: 'Custom (OpenAI-compat URL)',
     apiKeyHelp:
@@ -202,10 +223,32 @@ export function resolveApiKey(
   backend: Backend,
   configKey?: string,
 ): string | undefined {
+  return resolveApiKeyFrom(process.env, backend, configKey);
+}
+
+/**
+ * Same resolution order as {@link resolveApiKey} against an EXPLICIT env
+ * map. Doctor checks take an injected env so a run is deterministic;
+ * they must not re-implement the config ▶ canonical ▶ alias precedence,
+ * or they drift from what the adapter actually sends.
+ */
+export function resolveApiKeyFrom(
+  env: Record<string, string | undefined>,
+  backend: Backend,
+  configKey?: string,
+): string | undefined {
   if (configKey !== undefined && configKey.length > 0) return configKey;
   const meta = PROVIDER_META[backend];
   if (meta.apiKeyEnvVar === undefined) return undefined;
-  return process.env[meta.apiKeyEnvVar];
+  const canonical = env[meta.apiKeyEnvVar];
+  if (canonical !== undefined && canonical.length > 0) return canonical;
+  // Aliases are consulted only after the canonical name misses, so the
+  // name surfaced in the UI always wins when both are exported.
+  for (const alias of meta.apiKeyEnvVarAliases ?? []) {
+    const fromAlias = env[alias];
+    if (fromAlias !== undefined && fromAlias.length > 0) return fromAlias;
+  }
+  return canonical;
 }
 
 // ---------- legacy helpers (kept for back-compat) ----------

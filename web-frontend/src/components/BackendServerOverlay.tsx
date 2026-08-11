@@ -41,6 +41,7 @@ const TYPES: readonly Backend[] = [
   'anthropic',
   'openrouter',
   'google',
+  'unsloth',
   'custom',
 ];
 
@@ -51,6 +52,7 @@ const DISPLAY: Record<Backend, string> = {
   anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
   google: 'Gemini',
+  unsloth: 'Unsloth Studio',
   custom: 'Custom',
 };
 
@@ -61,10 +63,15 @@ const PLACEHOLDERS: Record<Backend, string> = {
   anthropic: 'https://api.anthropic.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
   google: 'https://generativelanguage.googleapis.com/v1beta',
+  unsloth: 'http://localhost:8888/v1',
   custom: 'https://your-gateway.example.com/v1',
 };
 
-/** Local providers don't need an API key. */
+/**
+ * Providers that don't need an API key. NOT the same as "runs locally":
+ * `unsloth` is a localhost server that still requires a bearer token,
+ * so it is deliberately absent here and gets the key field.
+ */
 const LOCAL: ReadonlySet<Backend> = new Set(['ollama', 'lmstudio']);
 
 /** Per-backend draft state edited by the user. */

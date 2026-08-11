@@ -366,10 +366,16 @@ async function preMountModelRefresh(
   let adapter: import('@/llm/adapter').LLMAdapter;
   try {
     const { LLMAdapter } = await import('@/llm/adapter');
+    const { resolveApiKey } = await import('@/config/defaults');
+    // The adapter never resolves keys itself. Without this the refresh
+    // is a guaranteed 401 on every keyed backend (Unsloth Studio
+    // included) — it fails silently, so the symptom is only ever "the
+    // model list never updates at startup".
     adapter = new LLMAdapter({
       baseUrl: cfg.backend.baseUrl,
       model: cfg.model.current,
       backend: cfg.backend.type,
+      apiKey: resolveApiKey(cfg.backend.type, cfg.backend.apiKey),
     });
   } catch {
     return;

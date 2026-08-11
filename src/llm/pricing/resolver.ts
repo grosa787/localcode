@@ -7,8 +7,8 @@
  * static table for any other backend — and as a last resort, when the
  * OpenRouter cache is cold or doesn't include the requested model.
  *
- * Local providers (`ollama`, `lmstudio`) deliberately return `null`
- * (rather than `{ 0, 0 }`) so the UI can distinguish "free" from
+ * Local providers (`ollama`, `lmstudio`, `unsloth`) deliberately return
+ * `null` (rather than `{ 0, 0 }`) so the UI can distinguish "free" from
  * "unknown" — both display "—" but the underlying signal matters when
  * aggregating across mixed-backend sessions.
  */
@@ -28,8 +28,8 @@ import { getOpenRouterPriceMapSync } from '@/llm/pricing/openrouter-pricing';
  *      then basename match, then longest-prefix match).
  *   2. Static table — same three-tier resolution as the legacy
  *      `resolvePricing`.
- *   3. `null` for local providers (`ollama`, `lmstudio`) — they have
- *      zero marginal cost; UI shows "—".
+ *   3. `null` for local providers (`ollama`, `lmstudio`, `unsloth`) —
+ *      they have zero marginal cost; UI shows "—".
  */
 export function resolvePrice(
   backend: Backend | string,
@@ -37,10 +37,17 @@ export function resolvePrice(
 ): ModelPricing | null {
   if (typeof modelId !== 'string' || modelId.length === 0) return null;
 
-  if (backend === 'ollama' || backend === 'lmstudio') {
+  if (
+    backend === 'ollama' ||
+    backend === 'lmstudio' ||
+    backend === 'unsloth'
+  ) {
     // Local backends — cost is zero but the dashboard should not bill
     // a $0 row that *looks* like a free cloud query. Returning null
-    // lets the renderer pick the right label.
+    // lets the renderer pick the right label. `unsloth` must return
+    // here rather than fall through: its `unsloth/<repo>-GGUF` ids
+    // would otherwise reach `lookupStaticPrice`'s prefix matcher and
+    // could be billed at a cloud model's rate.
     return null;
   }
 

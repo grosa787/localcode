@@ -26,6 +26,7 @@ export const BackendTypeSchema = z.enum([
   'anthropic',
   'openrouter',
   'google',
+  'unsloth',
   'custom',
 ]);
 

@@ -33,6 +33,31 @@ Both knobs are **automatically disabled** for cloud backends (`openai`,
 `openrouter`, `google`, `anthropic`) — the probe short-circuits to all-false
 without a network round-trip, and the adapter omits the fields.
 
+### Which backends get probed
+
+`LOCAL_BACKENDS` in `src/llm/inference-control/types.ts` is the gate:
+`ollama`, `lmstudio`, `unsloth`, `custom`. Membership is about **inference
+shape**, not auth — Unsloth Studio runs llama.cpp / MLX behind an
+OpenAI-compatible facade, so `grammar` and `cache_prompt` are genuinely in
+scope for it even though it requires an API key.
+
+Nothing is attached on the strength of that list alone. **Every knob is
+probe-gated**: the adapter attaches `grammar` / `cache_prompt` /
+`logit_bias` only after a live probe confirms the server accepts that
+specific field. A backend that is listed as local but doesn't support a
+knob simply has the field omitted from its request body — LocalCode never
+sends a field it hasn't confirmed, so an unsupported knob costs you a
+probe, not a 400.
+
+> **Unsloth.** The probe carries the resolved bearer token (config key
+> first, then `UNSLOTH_API_KEY` / its aliases), so a keyed local server is
+> measured rather than blanket-401'd — grammar lock engages against
+> Unsloth exactly as it does against LM Studio. The cache key records
+> whether the probe was authenticated, so a report written before you
+> pasted the key never masks a later keyed probe inside the 7-day TTL. If
+> no key is available the probe still fails closed: all capabilities
+> false, nothing attached, no malformed real request.
+
 > `logitBanlist` symbol-boosting needs a server `/tokenize` round-trip that
 > the TUI does not currently wire, so today only **grammar lock** ships live.
 > The config knob and adapter plumbing for `logit_bias` are in place for a

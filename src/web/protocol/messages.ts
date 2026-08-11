@@ -25,7 +25,12 @@ import type { Backend, Message, ToolCall } from '../../types/global.js';
 export type { Backend, Message, ToolCall };
 export type { Skill } from '../../types/global.js';
 
-/** All known backend identifiers. Kept in sync with the `Backend` union. */
+/**
+ * All known backend identifiers. Kept in sync with the `Backend` union
+ * BY HAND — `satisfies` only checks that every entry is a valid
+ * `Backend`, not that every `Backend` is listed. A missing entry makes
+ * the WS/REST layer reject that backend at runtime with a green build.
+ */
 const BACKEND_VALUES = [
   'ollama',
   'lmstudio',
@@ -33,6 +38,7 @@ const BACKEND_VALUES = [
   'anthropic',
   'openrouter',
   'google',
+  'unsloth',
   'custom',
 ] as const satisfies readonly Backend[];
 

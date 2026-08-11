@@ -21,10 +21,14 @@ export type Screen =
 /**
  * Identifies the active LLM provider.
  *
- * Local providers (`ollama`, `lmstudio`) need no API key. Cloud
- * providers all require an `apiKey` either in `BackendConfig.apiKey`
- * or via the env-var fallback exposed by `PROVIDER_META[backend]
- * .apiKeyEnvVar` (see `src/config/defaults.ts`).
+ * `ollama` and `lmstudio` need no API key. Cloud providers all require
+ * an `apiKey` either in `BackendConfig.apiKey` or via the env-var
+ * fallback exposed by `PROVIDER_META[backend].apiKeyEnvVar` (see
+ * `src/config/defaults.ts`).
+ *
+ * "Local means no key" is NOT a valid shortcut any more: `unsloth`
+ * runs on localhost yet REQUIRES a bearer token. Any predicate that
+ * branches on local-vs-cloud must decide auth separately from cost.
  *
  * - `openai`     — native OpenAI Chat Completions API.
  * - `anthropic`  — Messages API (different shape; uses `x-api-key`
@@ -33,6 +37,10 @@ export type Screen =
  *                  https://openrouter.ai.
  * - `google`     — Gemini API (different request shape; adapter
  *                  arrives in a later round).
+ * - `unsloth`    — Unsloth Studio's local OpenAI-compatible server
+ *                  (llama.cpp / MLX under the hood). Local, free, but
+ *                  authenticated: it rejects requests without
+ *                  `Authorization: Bearer sk-unsloth-…`.
  * - `custom`     — user-supplied OpenAI-compatible base URL. Useful
  *                  for Groq, Fireworks, Mistral, vLLM, llama.cpp
  *                  server, etc.
@@ -49,6 +57,7 @@ export type Backend =
   | 'anthropic'
   | 'openrouter'
   | 'google'
+  | 'unsloth'
   | 'custom';
 
 export interface BackendConfig {
@@ -57,8 +66,9 @@ export interface BackendConfig {
   /**
    * R9 — API key for cloud providers. Optional; when missing the
    * `resolveApiKey()` helper in `src/config/defaults.ts` falls back to
-   * the per-provider env var (e.g. `OPENAI_API_KEY`). Local providers
-   * (`ollama`, `lmstudio`) don't need a key — leave undefined.
+   * the per-provider env var (e.g. `OPENAI_API_KEY`). `ollama` and
+   * `lmstudio` don't need a key — leave undefined. `unsloth` DOES
+   * need one despite being local (see the `Backend` doc above).
    */
   apiKey?: string;
   /**

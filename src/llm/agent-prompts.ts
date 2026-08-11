@@ -111,10 +111,11 @@ export interface BuildWorkerAgentPromptOptions {
    */
   skills?: readonly string[];
   /**
-   * Optional active backend type. When `'lmstudio'`, the worker prompt
-   * appends a one-line note reminding the model that LM Studio shares
-   * inference slots between parallel agents — encourages concise
-   * reasoning to keep all workers responsive.
+   * Optional active backend type. For single-process local servers
+   * (`'lmstudio'`, `'unsloth'`) the worker prompt appends a one-line
+   * note reminding the model that inference slots are shared between
+   * parallel agents — encourages concise reasoning to keep all workers
+   * responsive.
    */
   runtimeBackend?:
     | 'lmstudio'
@@ -123,6 +124,7 @@ export interface BuildWorkerAgentPromptOptions {
     | 'anthropic'
     | 'openrouter'
     | 'google'
+    | 'unsloth'
     | 'custom';
 }
 
@@ -140,10 +142,15 @@ export function buildWorkerAgentPrompt(opts: BuildWorkerAgentPromptOptions): str
           .join('\n')
       : '(none — you are the only sub-agent on this team)';
 
-  const lmstudioHint =
+  // Single-process local servers (LM Studio, Unsloth Studio) serve every
+  // parallel worker from one queue — say so, or the model reasons at
+  // cloud length and starves its peers.
+  const sharedSlotHint =
     opts.runtimeBackend === 'lmstudio'
       ? '\n\n(You are running on LM Studio — your inference shares slots with other parallel agents. Prefer concise reasoning.)'
-      : '';
+      : opts.runtimeBackend === 'unsloth'
+        ? '\n\n(You are running on Unsloth Studio — one local server shares inference with other parallel agents. Prefer concise reasoning.)'
+        : '';
 
   const sections: string[] = [
     `Sub-agent ${opts.agentId}. Task: ${opts.task}`,
@@ -177,7 +184,7 @@ export function buildWorkerAgentPrompt(opts: BuildWorkerAgentPromptOptions): str
     "Don't ask clarifying questions — task is fixed. Make the best call and document it.",
   );
 
-  return sections.join('\n') + lmstudioHint;
+  return sections.join('\n') + sharedSlotHint;
 }
 
 /** Sentinel string the worker uses to mark task completion. */

@@ -14,6 +14,10 @@
  *   /provider lmstudio            → switch backend to LM Studio (keeps
  *                                   current URL if already LM Studio,
  *                                   else resets to the default).
+ *   /provider unsloth             → switch backend to Unsloth Studio
+ *                                   (localhost, but it DOES need an API
+ *                                   key — set it via /provider overlay
+ *                                   or UNSLOTH_API_KEY).
  *   /provider custom <http(s)://> → keep the current backend type and
  *                                   point it at the supplied URL. The
  *                                   user is responsible for choosing a
@@ -27,19 +31,27 @@
 
 import type { SlashCommand, CommandContext } from '@/types/global';
 import type { ConfigManager } from '@/config/config-manager';
+import { PROVIDER_DEFAULTS } from '@/config/defaults';
+// LOCALE-APPLY-SECTION — the Unsloth `--disable-tools` warning is the one
+// print on this command a user must actually read, so it is localised.
+import { t } from '@/i18n';
+// LOCALE-APPLY-SECTION-END
 
 export interface ProviderDeps {
   configManager: ConfigManager;
 }
 
+/** Backends this command can switch to by name (URL-only verbs excluded). */
+type SwitchTarget = 'ollama' | 'lmstudio' | 'unsloth';
+
 const PROVIDER_NAME = 'provider';
 const PROVIDER_DESCRIPTION =
-  'Switch between Ollama, LM Studio, or a custom backend URL.';
+  'Switch between Ollama, LM Studio, Unsloth Studio, or a custom backend URL.';
 const PROVIDER_USAGE =
-  '/provider [show | ollama | lmstudio | custom <url>]';
+  '/provider [show | ollama | lmstudio | unsloth | custom <url>]';
 
-const OLLAMA_DEFAULT_URL = 'http://localhost:11434';
-const LMSTUDIO_DEFAULT_URL = 'http://localhost:1234/v1';
+// Default URLs come from PROVIDER_DEFAULTS — a local copy would silently
+// drift from the onboarding screen and the /provider overlay.
 
 // Match what ProviderOverlay (and ConfigSchema) accept: http(s):// only.
 const URL_SHAPE = /^https?:\/\//;
@@ -62,7 +74,7 @@ export function createProviderCommand(deps: ProviderDeps): SlashCommand {
         }
         printCurrent(ctx, configManager);
         ctx.print(
-          'Use /provider ollama | lmstudio | custom <url> to switch.',
+          'Use /provider ollama | lmstudio | unsloth | custom <url> to switch.',
         );
         return;
       }
@@ -75,7 +87,7 @@ export function createProviderCommand(deps: ProviderDeps): SlashCommand {
         return;
       }
 
-      if (verb === 'ollama' || verb === 'lmstudio') {
+      if (verb === 'ollama' || verb === 'lmstudio' || verb === 'unsloth') {
         switchBackend(ctx, configManager, verb);
         return;
       }
@@ -114,7 +126,7 @@ function printCurrent(
 function switchBackend(
   ctx: CommandContext,
   configManager: ConfigManager,
-  target: 'ollama' | 'lmstudio',
+  target: SwitchTarget,
 ): void {
   let current;
   try {
@@ -129,8 +141,7 @@ function switchBackend(
   // URL. Otherwise fall back to the default for the new backend —
   // sticking the old URL onto the wrong backend type would silently
   // break requests.
-  const defaultUrl =
-    target === 'ollama' ? OLLAMA_DEFAULT_URL : LMSTUDIO_DEFAULT_URL;
+  const defaultUrl = PROVIDER_DEFAULTS[target].baseUrl;
   const newBaseUrl =
     current.backend.type === target ? current.backend.baseUrl : defaultUrl;
 
@@ -145,6 +156,15 @@ function switchBackend(
   }
 
   ctx.print(`✓ Backend switched to ${target}: ${newBaseUrl}`);
+
+  // Unsloth's own server-side tool loop swallows tool calls unless the
+  // server was launched with --disable-tools; LocalCode then looks dead
+  // rather than misconfigured. Say so at the moment of the switch.
+  if (target === 'unsloth') {
+    // LOCALE-APPLY-SECTION
+    ctx.print(t('provider.cmd.unslothDisableTools'));
+    // LOCALE-APPLY-SECTION-END
+  }
 }
 
 function setCustomUrl(

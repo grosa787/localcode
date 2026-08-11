@@ -67,6 +67,75 @@ sessions. The CLI prints `No session matching '<id>'; starting a new
 one.` Use a longer prefix (the banner prints 12 chars) or
 `/resume <prefix>` from inside chat to disambiguate.
 
+## Unsloth Studio
+
+### Model replies but never calls a tool — nothing gets read or edited
+
+**Cause: the server was started without `--disable-tools`.**
+
+By default Unsloth's server runs its own server-side tool loop and
+*intercepts* tool calls rather than returning them to the client.
+LocalCode does all its work through tool calls, so when Unsloth swallows
+them the agent looks like it is thinking and then does nothing. You may
+see prose, an empty reply, or a reply that claims a file was edited when
+it wasn't.
+
+**There is no error.** No 4xx, no stderr, no warning — which is exactly
+why this entry exists. If the agent is inert against Unsloth and healthy
+against every other backend, this is the reason.
+
+Fix — restart the server with the flag:
+
+```sh
+unsloth run --model unsloth/gemma-4-26B-A4B-it-GGUF --disable-tools -p 8888
+```
+
+Verify the tool loop is actually reaching LocalCode by asking for
+something that must touch disk, e.g. "list the files in this directory".
+If `list_dir` never appears in the transcript, the flag is still missing.
+
+### Every request 401s against `localhost:8888`
+
+**Cause: missing or wrong API key.**
+
+Unlike Ollama and LM Studio, Unsloth Studio requires
+`Authorization: Bearer sk-unsloth-...` on **every** request — including
+on localhost. Running locally does not exempt it. LocalCode classifies
+Unsloth with the bearer-auth providers for this reason, so if no key is
+resolved the header goes out empty and the server rejects it.
+
+Fix — supply the key by any of:
+
+- `/provider` overlay → Unsloth Studio → API key field.
+- `apiKey = "sk-unsloth-..."` under `[backend]` in
+  `~/.localcode/config.toml`.
+- `export UNSLOTH_API_KEY=sk-unsloth-...` (canonical), or
+  `export UNSLOTH_STUDIO_AUTH_TOKEN=sk-unsloth-...` (accepted alias,
+  consulted only after the canonical name misses).
+
+Get the key from **Settings → API** in Unsloth Studio. `unsloth run`
+also prints it on startup. Confirm out-of-band with:
+
+```sh
+curl -H "Authorization: Bearer sk-unsloth-..." http://localhost:8888/v1/models
+```
+
+A 200 with a `{"object":"list","data":[...]}` body means the key is
+good and the problem is in LocalCode's config; a 401 means the key
+itself is wrong.
+
+`localcode doctor` probes the backend **with** the resolved key, so its
+Backend row answers the same question: `ok` means the server accepted
+the exact credential LocalCode will send on the next turn, and a `fail`
+naming `UNSLOTH_API_KEY` means the key really is missing or wrong.
+
+### Connection refused on `localhost:8888`
+
+The default port is 8888 and LocalCode pre-fills it, but one page of the
+Unsloth docs uses **8000**. If you launched without `-p`, try
+`http://localhost:8000/v1`. Set `baseUrl` to whichever port the server
+actually bound.
+
 ## Streaming + content rendering
 
 ### Garbled tokens like `<|channel|>` or `<|message|>` in output

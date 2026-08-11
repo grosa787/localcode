@@ -502,6 +502,13 @@ export const ru: Record<TranslationKey, string> = {
   'providerPicker.switched': 'Переключено на {name}; модель: {model}',
   'providerPicker.failed': 'Не удалось переключить провайдера',
 
+  // Unsloth Studio
+  'provider.unsloth.disableTools.title': 'Запускайте Unsloth Studio с --disable-tools',
+  'provider.unsloth.disableTools.body':
+    'По умолчанию Unsloth Studio сам обрабатывает вызовы инструментов и не возвращает их клиенту. LocalCode работает именно через вызовы инструментов, поэтому со стороны кажется, что модель просто ничего не делает. Запускайте сервер так:',
+  'provider.unsloth.disableTools.command':
+    'unsloth run --model <repo> --disable-tools -p 8888',
+
   // Model picker
   'modelPicker.aria': 'Выбор модели',
   'modelPicker.filter': 'Поиск модели…',

@@ -75,20 +75,28 @@ export interface ProviderUrls {
   readonly anthropic: string;
   readonly openrouter: string;
   readonly google: string;
+  readonly unsloth: string;
   readonly custom: string;
 }
 
 /**
- * API keys keyed by Backend. Local providers (`ollama`, `lmstudio`)
- * have no key field, so they're omitted from the type. Cloud providers
- * may also be left empty — `resolveApiKey()` falls back to the
- * provider's published env var (e.g. `OPENAI_API_KEY`).
+ * API keys keyed by Backend. Only `ollama` and `lmstudio` have no key
+ * field, so they're omitted from the type. Keyed providers may still be
+ * left empty — `resolveApiKey()` falls back to the provider's published
+ * env var (e.g. `OPENAI_API_KEY`).
+ *
+ * `unsloth` belongs here despite being a local server: it requires a
+ * bearer token. This is invisible to tsc — `isApiKeyRow()` below is a
+ * user-defined predicate whose narrowed type TypeScript never verifies
+ * against the body, so a missing key here renders an undefined cell at
+ * runtime with a clean compile.
  */
 export interface ProviderApiKeys {
   readonly openai: string;
   readonly anthropic: string;
   readonly openrouter: string;
   readonly google: string;
+  readonly unsloth: string;
   readonly custom: string;
 }
 
@@ -146,6 +154,7 @@ const ROW_ORDER: readonly Backend[] = [
   'anthropic',
   'openrouter',
   'google',
+  'unsloth',
   'custom',
 ];
 
@@ -207,6 +216,7 @@ function cloneUrls(u: ProviderUrls): MutableProviderUrls {
     anthropic: u.anthropic,
     openrouter: u.openrouter,
     google: u.google,
+    unsloth: u.unsloth,
     custom: u.custom,
   };
 }
@@ -217,6 +227,7 @@ function cloneKeys(k: ProviderApiKeys): MutableProviderApiKeys {
     anthropic: k.anthropic,
     openrouter: k.openrouter,
     google: k.google,
+    unsloth: k.unsloth,
     custom: k.custom,
   };
 }
@@ -226,6 +237,7 @@ const EMPTY_KEYS: ProviderApiKeys = {
   anthropic: '',
   openrouter: '',
   google: '',
+  unsloth: '',
   custom: '',
 };
 
@@ -793,6 +805,14 @@ function ProviderOverlay({
         {selected === 'openrouter' && (
           <Text color={noxPalette.yellow}>
             {t('provider.warn.openrouter')}
+          </Text>
+        )}
+        {/* Shown while merely HIGHLIGHTED too, not only once selected:
+            the --disable-tools trap has to be read before applying, and
+            this overlay is the primary way users switch provider. */}
+        {(selected === 'unsloth' || currentRow.id === 'unsloth') && (
+          <Text color={noxPalette.yellow}>
+            {t('provider.warn.unsloth')}
           </Text>
         )}
         {/* I18N-STRINGS-END */}

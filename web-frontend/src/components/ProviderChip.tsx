@@ -37,10 +37,16 @@ const DISPLAY: Record<Backend, string> = {
   anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
   google: 'Gemini',
+  unsloth: 'Unsloth',
   custom: 'Custom',
 };
 
-const LOCAL: ReadonlySet<Backend> = new Set(['ollama', 'lmstudio']);
+/**
+ * Drives the chip ICON only (Cpu vs Cloud) — `unsloth` belongs here
+ * because it is a localhost server, even though it needs an API key.
+ * Do NOT reuse this set as a "needs no key" predicate.
+ */
+const LOCAL: ReadonlySet<Backend> = new Set(['ollama', 'lmstudio', 'unsloth']);
 
 export function ProviderChip({ onSwitch, disabled = false }: ProviderChipProps): JSX.Element {
   const t = useT();

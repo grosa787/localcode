@@ -11,7 +11,7 @@ import type { StringTable } from './en.js';
 export const ru: StringTable = {
   // ---------- Онбординг ----------
   'onboarding.welcome':
-    'Добро пожаловать. Выберите LLM-бэкенд для общения. Локальные провайдеры (Ollama, LM Studio) не требуют ключа — облачным он нужен.',
+    'Добро пожаловать. Выберите LLM-бэкенд для общения. Ollama и LM Studio работают без ключа — облачным провайдерам и Unsloth Studio ключ нужен.',
   'onboarding.needsApiKey': '[нужен API-ключ]',
   'onboarding.navHint': '↑/↓ перемещение · Enter выбрать · Esc выйти',
   'onboarding.selected': 'Выбрано: {name}',
@@ -45,6 +45,8 @@ export const ru: StringTable = {
     'Попробуйте: `ollama pull qwen2.5-coder`.',
   'onboarding.noModelsHint.lmstudio':
     'Сначала загрузите модель в LM Studio.',
+  'onboarding.noModelsHint.unsloth':
+    'Загрузите модель в Unsloth Studio и запускайте сервер для агентов так: `unsloth run --model <repo> --disable-tools -p 8888`. Без `--disable-tools` Unsloth сам обрабатывает вызовы инструментов, и LocalCode будет просто молчать.',
   'onboarding.noModelsHint.custom':
     'Кастомный эндпоинт не вернул /v1/models — проверьте URL.',
   'onboarding.noModelsHint.cloud':
@@ -169,6 +171,8 @@ export const ru: StringTable = {
     '  • Облачным провайдерам нужен API-ключ — получите его в панели провайдера или задайте переменную окружения (например, $OPENAI_API_KEY).',
   'provider.warn.openrouter':
     '  ! Выбран OpenRouter — убедитесь, что openrouter.ai доступен, прежде чем применять.',
+  'provider.warn.unsloth':
+    '  ! Unsloth Studio: запускайте сервер с --disable-tools (`unsloth run --model <repo> --disable-tools -p 8888`), иначе он сам обрабатывает вызовы инструментов и LocalCode будет просто молчать.',
   'provider.error.customUrlRequired': 'Нужен Custom URL',
   'provider.error.cloudUrlEmpty': 'URL облачного провайдера пуст',
   'provider.error.urlScheme':
@@ -185,6 +189,10 @@ export const ru: StringTable = {
     'Правка API-ключа (видим — очистите буфер после вставки) · Enter сохранить · Tab перейти к URL · Esc отмена',
   'provider.footer':
     '↑/↓ навигация · (пробел) выбрать · (enter) править URL · (tab/e) править ключ · (ctrl+enter / a) применить · (esc) отмена',
+
+  // ---------- Команда /provider (текстовый вывод) ----------
+  'provider.cmd.unslothDisableTools':
+    'Запускайте Unsloth Studio с --disable-tools, иначе он сам обрабатывает вызовы инструментов и LocalCode ничего не получает: `unsloth run --model <repo> --disable-tools -p 8888`',
 
   // ---------- Окно /mcp добавление сервера ----------
   'mcp.add.title': 'Добавить MCP-сервер',

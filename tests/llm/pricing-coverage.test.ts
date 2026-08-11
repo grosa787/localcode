@@ -59,3 +59,42 @@ describe('resolvePrice — representative coverage', () => {
     expect(resolvePrice('openai', '')).toBeNull();
   });
 });
+
+describe('resolvePrice — unsloth is local and always free', () => {
+  // Unsloth Studio is a local server, so every id it serves costs $0 at
+  // the margin. It must short-circuit to null exactly like ollama /
+  // lmstudio rather than fall through to `lookupStaticPrice`.
+
+  test('realistic unsloth GGUF repo ids are null', () => {
+    expect(
+      resolvePrice('unsloth', 'unsloth/qwen3-coder-30B-A3B-Instruct-GGUF'),
+    ).toBeNull();
+    expect(
+      resolvePrice('unsloth', 'unsloth/gemma-4-26B-A4B-it-GGUF'),
+    ).toBeNull();
+    expect(resolvePrice('unsloth', 'unsloth/gpt-oss-120b-GGUF')).toBeNull();
+  });
+
+  test('ids that WOULD prefix-match a cloud price row are still null', () => {
+    // This is the regression that matters. `lookupStaticPrice` does a
+    // longest-prefix match, so a locally-served id like `gpt-5-GGUF`
+    // resolves to GPT-5's $5/$15-per-1M row if unsloth is allowed to
+    // fall through — billing a free local session at cloud rates.
+    // Short-circuiting on the backend is what prevents it.
+    expect(resolvePrice('unsloth', 'gpt-5-GGUF')).toBeNull();
+    expect(resolvePrice('unsloth', 'gpt-4o')).toBeNull();
+    expect(resolvePrice('unsloth', 'claude-sonnet-4-20250514')).toBeNull();
+    expect(resolvePrice('unsloth', 'qwen/qwen3-coder-GGUF')).toBeNull();
+  });
+
+  test('the same ids DO resolve on a cloud backend (guard is not vacuous)', () => {
+    // Proves the assertions above are testing the backend short-circuit
+    // and not merely that these ids are absent from the price table.
+    expect(resolvePrice('openai', 'gpt-4o')).not.toBeNull();
+    expect(resolvePrice('anthropic', 'claude-sonnet-4-20250514')).not.toBeNull();
+  });
+
+  test('empty model id on unsloth is null', () => {
+    expect(resolvePrice('unsloth', '')).toBeNull();
+  });
+});

@@ -56,6 +56,7 @@ const ALL_BACKENDS: Backend[] = [
   'anthropic',
   'openrouter',
   'google',
+  'unsloth',
   'custom',
 ];
 
@@ -70,6 +71,15 @@ describe('BackendTypeSchema — accepts every backend kind', () => {
   test('rejects unknown backend strings', () => {
     const result = BackendTypeSchema.safeParse('palm');
     expect(result.success).toBe(false);
+  });
+
+  // Explicit, non-loop assertion. The `ALL_BACKENDS` loop above only
+  // covers what the array lists, so it cannot fail when a provider is
+  // missing from the schema — it would simply never be tested. This
+  // names `unsloth` directly so dropping it from `BackendTypeSchema`
+  // is a red test rather than silent loss of coverage.
+  test('unsloth parses', () => {
+    expect(BackendTypeSchema.parse('unsloth')).toBe('unsloth');
   });
 });
 
@@ -233,6 +243,9 @@ describe('PROVIDER_DEFAULTS — base URLs', () => {
       'https://generativelanguage.googleapis.com/v1beta',
     );
     expect(PROVIDER_DEFAULTS.custom.baseUrl).toBe('');
+    expect(PROVIDER_DEFAULTS.unsloth.baseUrl).toBe(
+      'http://localhost:8888/v1',
+    );
   });
 
   test('cloud providers requireApiKey, local providers do not', () => {
@@ -243,10 +256,18 @@ describe('PROVIDER_DEFAULTS — base URLs', () => {
     expect(PROVIDER_DEFAULTS.openrouter.requiresApiKey).toBe(true);
     expect(PROVIDER_DEFAULTS.google.requiresApiKey).toBe(true);
   });
+
+  // The load-bearing exception to the rule above. Unsloth Studio runs on
+  // localhost yet rejects unauthenticated requests, so "local" must NOT
+  // be read as "needs no key" anywhere in the codebase. If this flips to
+  // false, the provider UI hides the key field and every request 401s.
+  test('unsloth is local BUT requires an API key', () => {
+    expect(PROVIDER_DEFAULTS.unsloth.requiresApiKey).toBe(true);
+  });
 });
 
 describe('PROVIDER_META — display names + env vars', () => {
-  test('displayName is defined for all 7 backends', () => {
+  test('displayName is defined for every backend', () => {
     for (const b of ALL_BACKENDS) {
       const meta = PROVIDER_META[b];
       expect(meta).toBeDefined();
@@ -262,10 +283,36 @@ describe('PROVIDER_META — display names + env vars', () => {
     expect(PROVIDER_META.google.apiKeyEnvVar).toBe('GEMINI_API_KEY');
   });
 
-  test('local providers do NOT declare an apiKeyEnvVar', () => {
+  test('keyless local providers do NOT declare an apiKeyEnvVar', () => {
     expect(PROVIDER_META.ollama.apiKeyEnvVar).toBeUndefined();
     expect(PROVIDER_META.lmstudio.apiKeyEnvVar).toBeUndefined();
     expect(PROVIDER_META.custom.apiKeyEnvVar).toBeUndefined();
+  });
+
+  test('unsloth declares UNSLOTH_API_KEY as its canonical env var', () => {
+    expect(PROVIDER_META.unsloth.apiKeyEnvVar).toBe('UNSLOTH_API_KEY');
+  });
+
+  test('unsloth declares UNSLOTH_STUDIO_AUTH_TOKEN as an alias', () => {
+    // Unsloth's own tooling exports the *_STUDIO_AUTH_TOKEN name, so a
+    // shell already set up for Unsloth must work untouched. The UI still
+    // shows only the canonical name.
+    expect(PROVIDER_META.unsloth.apiKeyEnvVarAliases).toContain(
+      'UNSLOTH_STUDIO_AUTH_TOKEN',
+    );
+  });
+
+  test('unsloth is labelled "Unsloth Studio (local)"', () => {
+    expect(PROVIDER_META.unsloth.displayName).toBe('Unsloth Studio (local)');
+  });
+
+  test('unsloth key help mentions the mandatory --disable-tools flag', () => {
+    // Without --disable-tools the server swallows tool calls and the
+    // agent silently does nothing, so this hint must stay discoverable
+    // wherever the key is entered.
+    expect(PROVIDER_META.unsloth.apiKeyHelp ?? '').toContain(
+      '--disable-tools',
+    );
   });
 });
 
@@ -345,6 +392,82 @@ describe('resolveApiKey — env var fallback for all cloud providers', () => {
 
   test('custom provider returns explicit key when supplied', () => {
     expect(resolveApiKey('custom', 'gsk-test-key')).toBe('gsk-test-key');
+  });
+});
+
+describe('resolveApiKey — unsloth canonical + alias env vars', () => {
+  /**
+   * Runs `fn` with both Unsloth env vars forced to a known state, then
+   * restores whatever the ambient environment had. Necessary because
+   * these tests assert on *absence* as well as presence, and a developer
+   * with UNSLOTH_API_KEY exported would otherwise get false greens.
+   */
+  function withUnslothEnv(
+    canonical: string | undefined,
+    alias: string | undefined,
+    fn: () => void,
+  ): void {
+    const origCanonical = process.env.UNSLOTH_API_KEY;
+    const origAlias = process.env.UNSLOTH_STUDIO_AUTH_TOKEN;
+    try {
+      if (canonical === undefined) delete process.env.UNSLOTH_API_KEY;
+      else process.env.UNSLOTH_API_KEY = canonical;
+      if (alias === undefined) delete process.env.UNSLOTH_STUDIO_AUTH_TOKEN;
+      else process.env.UNSLOTH_STUDIO_AUTH_TOKEN = alias;
+      fn();
+    } finally {
+      if (origCanonical === undefined) delete process.env.UNSLOTH_API_KEY;
+      else process.env.UNSLOTH_API_KEY = origCanonical;
+      if (origAlias === undefined) {
+        delete process.env.UNSLOTH_STUDIO_AUTH_TOKEN;
+      } else {
+        process.env.UNSLOTH_STUDIO_AUTH_TOKEN = origAlias;
+      }
+    }
+  }
+
+  test('canonical UNSLOTH_API_KEY resolves', () => {
+    withUnslothEnv('sk-unsloth-canonical', undefined, () => {
+      expect(resolveApiKey('unsloth', undefined)).toBe(
+        'sk-unsloth-canonical',
+      );
+    });
+  });
+
+  test('alias UNSLOTH_STUDIO_AUTH_TOKEN resolves when it is the only one set', () => {
+    withUnslothEnv(undefined, 'sk-unsloth-alias', () => {
+      expect(resolveApiKey('unsloth', undefined)).toBe('sk-unsloth-alias');
+    });
+  });
+
+  test('canonical wins when both are exported', () => {
+    // The alias is a compatibility shim, not an override — the name the
+    // UI advertises must be the one that takes effect.
+    withUnslothEnv('sk-unsloth-canonical', 'sk-unsloth-alias', () => {
+      expect(resolveApiKey('unsloth', undefined)).toBe(
+        'sk-unsloth-canonical',
+      );
+    });
+  });
+
+  test('explicit config key beats both env vars', () => {
+    withUnslothEnv('sk-unsloth-canonical', 'sk-unsloth-alias', () => {
+      expect(resolveApiKey('unsloth', 'sk-unsloth-explicit')).toBe(
+        'sk-unsloth-explicit',
+      );
+    });
+  });
+
+  test('undefined when neither env var is set and no config key', () => {
+    withUnslothEnv(undefined, undefined, () => {
+      expect(resolveApiKey('unsloth', undefined)).toBeUndefined();
+    });
+  });
+
+  test('empty-string env values are ignored, alias still consulted', () => {
+    withUnslothEnv('', 'sk-unsloth-alias', () => {
+      expect(resolveApiKey('unsloth', undefined)).toBe('sk-unsloth-alias');
+    });
   });
 });
 

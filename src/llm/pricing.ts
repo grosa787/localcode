@@ -11,8 +11,11 @@
  * Lookup is prefix-based (`resolvePricing`): "anthropic/claude-3.5-sonnet"
  * matches a stored row whose key is "anthropic/claude-3.5-sonnet" or
  * "claude-3.5-sonnet" (the latter for direct-from-Anthropic calls that
- * skip the OpenRouter prefix). Local providers (Ollama / LM Studio) have
- * no entry — `resolvePricing` returns null and the UI shows "—".
+ * skip the OpenRouter prefix). Local providers (Ollama / LM Studio /
+ * Unsloth Studio) have no entry — `resolvePricing` returns null and the
+ * UI shows "—". Provider-aware callers should prefer `getPricing()`
+ * below, which short-circuits local providers to zero before the
+ * prefix matcher can see the model id at all.
  */
 
 export interface ModelPricing {
@@ -147,8 +150,9 @@ export function resolvePricing(modelId: string): ModelPricing | null {
  * Provider-aware pricing lookup. Used by the next-turn cost estimator.
  *
  * Behaviour:
- *   - Local providers (`ollama`, `lmstudio`) → all-zero pricing so the
- *     forecast chip can be hidden / skipped at the call site.
+ *   - Local providers (`ollama`, `lmstudio`, `unsloth`) → all-zero
+ *     pricing so the forecast chip can be hidden / skipped at the call
+ *     site.
  *   - Cloud providers → delegate to `resolvePricing(model)` which uses
  *     the curated table at the top of this file (Anthropic / OpenAI /
  *     Google / DeepSeek / Qwen / OpenRouter prefixes).
@@ -163,8 +167,16 @@ export function getPricing(
 ): ModelPricing | null {
   if (typeof model !== 'string' || model.length === 0) return null;
   // Local providers — fixed zero cost, never null (`null` means
-  // "unknown"; local cost is known to be free).
-  if (provider === 'ollama' || provider === 'lmstudio') {
+  // "unknown"; local cost is known to be free). `unsloth` is here for
+  // the same reason as the other two despite needing an API key: its
+  // model ids look like `unsloth/<repo>-GGUF`, and without this branch
+  // `resolvePricing`'s basename + longest-prefix matcher could pick up
+  // a PAID cloud row for a locally-hosted model.
+  if (
+    provider === 'ollama' ||
+    provider === 'lmstudio' ||
+    provider === 'unsloth'
+  ) {
     return { inputPer1M: 0, outputPer1M: 0, cachedInputPer1M: 0 };
   }
   // OpenRouter / Anthropic / OpenAI / Google / custom — delegate to

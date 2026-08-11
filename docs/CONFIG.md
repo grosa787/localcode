@@ -39,8 +39,12 @@ writing.
 # All fields shown with their defaults from src/config/defaults.ts.
 
 [backend]
-type = "ollama"          # "ollama" | "lmstudio"
+# "ollama" | "lmstudio" | "openai" | "anthropic" | "openrouter"
+# | "google" | "unsloth" | "custom"
+type = "ollama"
 baseUrl = "http://localhost:11434"
+# apiKey = "..."         # optional; required by every type except
+                         # ollama / lmstudio / custom
 
 [model]
 current = ""             # populated by onboarding
@@ -74,12 +78,37 @@ errorFile = ""
 
 | Field | Type | Default (Ollama) | Default (LM Studio) | Notes |
 | --- | --- | --- | --- | --- |
-| `type` | `"ollama" \| "lmstudio"` | `"ollama"` | `"lmstudio"` | Determines which native fallback URL the adapter tries (`/api/tags` for Ollama). |
+| `type` | backend enum (below) | `"ollama"` | `"lmstudio"` | Determines which native fallback URL the adapter tries (`/api/tags` for Ollama) and whether an `Authorization` header is attached. |
 | `baseUrl` | non-empty string | `http://localhost:11434` | `http://localhost:1234/v1` | Trailing `/v1` is stripped/joined as needed by `LLMAdapter.joinUrl`. |
+| `apiKey` | string | — | — | Optional. Wins over the provider's env var when both are set. |
+| `customHeaders` | table of string | — | — | Forwarded verbatim on every request. |
+
+`type` accepts: `ollama`, `lmstudio`, `openai`, `anthropic`,
+`openrouter`, `google`, `unsloth`, `custom`. Owned by
+`BackendTypeSchema` in `src/config/types.ts`; per-provider defaults live
+in `PROVIDER_DEFAULTS` (`src/config/defaults.ts`).
 
 The adapter's `resolveBackend()` falls back to URL inspection when
 `type` isn't set explicitly, so a custom URL on `:11434` is treated as
 Ollama; everything else as LM Studio.
+
+#### Unsloth Studio
+
+Local server, but it **requires** an API key — the only backend where
+"runs on localhost" and "needs no key" come apart. Set `type` explicitly;
+URL inspection cannot tell an Unsloth port from any other local
+OpenAI-compatible server.
+
+```toml
+[backend]
+type = "unsloth"
+baseUrl = "http://localhost:8888/v1"
+apiKey = "sk-unsloth-..."     # or export UNSLOTH_API_KEY
+```
+
+Start the server with `--disable-tools` or LocalCode's tool calls are
+swallowed server-side and the agent silently does nothing — see
+[PROVIDERS.md](PROVIDERS.md#unsloth-studio-local).
 
 ### `[model]`
 

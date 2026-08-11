@@ -346,7 +346,10 @@ describe('OnboardingScreen scan step', () => {
     });
     try {
       await advance(view);
-      // CHOICES[2] is OpenAI (requiresApiKey).
+      // CHOICES[3] is OpenAI (requiresApiKey) — ollama, lmstudio and
+      // unsloth come first in the local-first ordering.
+      view.press(DOWN);
+      await advance(view);
       view.press(DOWN);
       await advance(view);
       view.press(DOWN);

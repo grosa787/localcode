@@ -571,7 +571,10 @@ export async function startWebApp(
       });
     }
     // OpenAI-compatible path covers ollama / lmstudio / openai / openrouter /
-    // google / custom.
+    // google / unsloth / custom. Unsloth Studio needs no branch of its own:
+    // its wire format is plain OpenAI, and the bearer token it *requires*
+    // (unlike the other localhost backends) arrives via `resolveApiKey`
+    // below, since `isOpenAiCompatCloud` in adapter.ts lists it.
     let currentModel = '';
     try {
       currentModel = configManager.read().model.current;
@@ -658,8 +661,14 @@ export async function startWebApp(
         model: config.model.current,
         backend: config.backend.type,
       };
-      if (config.backend.apiKey !== undefined && config.backend.apiKey.length > 0) {
-        adapterCfg.apiKey = config.backend.apiKey;
+      // Env-var fallback, exactly like the TUI's `createAdapter`. Without
+      // it a key that lives only in the environment (the documented
+      // Unsloth Studio setup: `UNSLOTH_API_KEY` exported, nothing in
+      // config.toml) never reaches the adapter and every web turn 401s
+      // while `/api/config/provider` — which does resolve — reports OK.
+      const resolvedKey = resolveApiKey(config.backend.type, config.backend.apiKey);
+      if (resolvedKey !== undefined && resolvedKey.length > 0) {
+        adapterCfg.apiKey = resolvedKey;
       }
       if (config.backend.customHeaders !== undefined) {
         adapterCfg.customHeaders = config.backend.customHeaders;

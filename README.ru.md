@@ -55,7 +55,7 @@ localcode --web                      # браузерный UI (откроетс
 
 ## Что нового
 
-- **Любая LLM** — Ollama, LM Studio, OpenAI, Anthropic, OpenRouter, Google Gemini и любой OpenAI-совместимый URL (Groq, Together, Fireworks, Mistral, vLLM, llama.cpp…). Один UI, семь бэкендов.
+- **Любая LLM** — Ollama, LM Studio, Unsloth Studio, OpenAI, Anthropic, OpenRouter, Google Gemini и любой OpenAI-совместимый URL (Groq, Together, Fireworks, Mistral, vLLM, llama.cpp…). Один UI, восемь бэкендов.
 - **Два интерфейса, общий мозг** — красивый ink TUI **и** отполированный web UI (табы, dock, голос, drag-drop, PDF, whiteboard).
 - **Реальный tool-calling с approval-гейтами** — диффы и превью команд, авто-approve по инструменту, **5 профилей разрешений** (`default`, `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions`).
 - **Суб-агенты по требованию** — спавн специалистов из каталога (`architect`, `debugger`, `security-reviewer`, ревьюверы по языкам и др.). Переключайся между ними, отправляй доп.контекст, смотри прогресс.
@@ -91,6 +91,7 @@ localcode --web                      # браузерный UI (откроетс
 | ----------------- | ------- | -------------------------------------------------------------------------- |
 | Ollama            | Локал.  | Поставь Ollama, запусти `ollama serve`                                     |
 | LM Studio         | Локал.  | Поставь LM Studio, включи локальный сервер                                 |
+| Unsloth Studio    | Локал.  | `unsloth run --model <repo> --disable-tools -p 8888` — **нужен API-ключ** (`UNSLOTH_API_KEY`) |
 | OpenAI            | Облако  | Ключ через `OPENAI_API_KEY` или `/provider`                                |
 | Anthropic         | Облако  | Ключ через `ANTHROPIC_API_KEY` или `/provider`                             |
 | OpenRouter        | Облако  | Ключ через `OPENROUTER_API_KEY` или `/provider`                            |
@@ -98,6 +99,32 @@ localcode --web                      # браузерный UI (откроетс
 | Custom            | Облако  | Любой OpenAI-совместимый base URL (Groq, Together, Fireworks, Mistral, …)  |
 
 Явный `apiKey` в `~/.localcode/config.toml` выигрывает; переменные окружения — fallback. Примеры по каждому провайдеру: [docs/PROVIDERS.md](localcode/docs/PROVIDERS.md).
+
+### Unsloth Studio: две вещи, на которых спотыкаются все
+
+Unsloth Studio — локальный сервер инференса GGUF/MLX (llama.cpp + MLX) на
+`http://localhost:8888/v1`, общение идёт по обычному OpenAI-совместимому
+API. Установка: `curl -fsSL https://unsloth.ai/install.sh | sh`, затем:
+
+```sh
+unsloth run --model unsloth/gemma-4-26B-A4B-it-GGUF --disable-tools -p 8888
+```
+
+1. **`--disable-tools` обязателен.** Без него Unsloth крутит собственный
+   серверный tool-loop и *перехватывает* tool calls вместо того чтобы
+   вернуть их клиенту. LocalCode делает всю работу через tool calls, так
+   что агент отвечает текстом и не трогает ни одного файла — **при этом
+   никакой ошибки нигде не появится**. Если против Unsloth LocalCode
+   выглядит «мёртвым» — причина здесь.
+2. **Ключ нужен даже на localhost.** Ollama и LM Studio ключа не просят;
+   Unsloth отдаёт 401 без `Authorization: Bearer sk-unsloth-…`. Забрать
+   ключ: **Settings → API** в Unsloth Studio (его же печатает
+   `unsloth run`), дальше `UNSLOTH_API_KEY` или поле в `/provider`.
+
+macOS на Apple Silicon поддерживается без GPU и без CUDA (macOS 12+,
+Python >=3.11 <3.14). Для Windows и Linux действуют требования самого
+Unsloth — NVIDIA GPU с CUDA. Подробности:
+**[docs/PROVIDERS.md](localcode/docs/PROVIDERS.md#unsloth-studio-local)**.
 
 <br/>
 
@@ -231,7 +258,7 @@ docker run --rm -p 7777:7777 \
   --web --web-host 0.0.0.0 --no-open
 ```
 
-Для локальных бэкендов (Ollama / LM Studio) на хосте используйте
+Для локальных бэкендов (Ollama / LM Studio / Unsloth Studio) на хосте используйте
 `host.docker.internal` (Docker Desktop) или добавьте
 `--add-host=host.docker.internal:host-gateway` на Linux. Полное руководство
 по использованию, авторизации, persistence и compose-рецептам:
@@ -324,7 +351,7 @@ localcode [projectRoot] [флаги]
 | `/help`            | Список всех зарегистрированных команд.                                                |
 | `/init`            | Сканирует проект и пишет `.localcode/LOCALCODE.md`.                                   |
 | `/model [name]`    | Открыть выбор или переключить напрямую.                                               |
-| `/provider [...]`  | Переключить бэкенд (Ollama / LM Studio / OpenAI / Anthropic / OpenRouter / Google / custom). |
+| `/provider [...]`  | Переключить бэкенд (Ollama / LM Studio / Unsloth / OpenAI / Anthropic / OpenRouter / Google / custom). |
 | `/profile [name]`  | Переключить профиль разрешений: `default` · `acceptEdits` · `plan` · `dontAsk` · `bypassPermissions`. |
 | `/style [name]`    | Стиль вывода: `concise` · `explanatory` · `verbose`.                                  |
 | `/statusline`      | Настроить шаблон статус-строки.                                                       |

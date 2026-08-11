@@ -145,7 +145,12 @@ export async function handleConfigProvider(
     );
   }
 
-  const effectiveKey = resolveApiKey(type, apiKey ?? current.backend.apiKey);
+  // The persisted `backend.apiKey` belongs to the CURRENT provider. Only
+  // carry it over when the type is unchanged — otherwise switching from
+  // e.g. openai to unsloth would send an `sk-proj-…` key to a localhost
+  // server (401, refused switch) while the correct env var sat unread.
+  const carriedKey = type === current.backend.type ? current.backend.apiKey : undefined;
+  const effectiveKey = resolveApiKey(type, apiKey ?? carriedKey);
 
   // Probe the new provider before persisting — surface auth errors
   // directly to the UI without committing a broken config to disk.
@@ -179,7 +184,11 @@ export async function handleConfigProvider(
       backend: {
         type,
         baseUrl,
-        ...(apiKey !== undefined ? { apiKey } : {}),
+        // Switching provider without a new key CLEARS the stored one:
+        // `update()` skips `undefined`, so the old provider's secret
+        // would otherwise be sent to the new endpoint and shadow the
+        // env-var fallback. '' reads as "unset" everywhere.
+        apiKey: apiKey ?? (type === current.backend.type ? current.backend.apiKey ?? '' : ''),
         ...(customHeaders !== undefined ? { customHeaders } : {}),
       },
       model: {
@@ -236,8 +245,11 @@ export async function handleConfigProviders(
     'anthropic',
     'openrouter',
     'google',
+    'unsloth',
     'custom',
   ];
+  // Hand-maintained: the `as` cast below defeats exhaustiveness, so a
+  // backend missing from this list is silently absent from the wire.
   const byType = {} as Record<Backend, PerProviderEntry>;
   for (const t of types) {
     if (t === cfg.backend.type) {

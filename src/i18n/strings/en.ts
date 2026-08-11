@@ -14,8 +14,11 @@
 
 export const en = {
   // ---------- Onboarding ----------
+  // "Runs locally" is NOT the same as "needs no key": Unsloth Studio is
+  // a localhost server that still requires a bearer token, so the copy
+  // names the keyless providers instead of generalising about local.
   'onboarding.welcome':
-    'Welcome. Pick the LLM backend you want to talk to. Local providers (Ollama, LM Studio) need no key — cloud providers do.',
+    'Welcome. Pick the LLM backend you want to talk to. Ollama and LM Studio need no key — cloud providers and Unsloth Studio do.',
   'onboarding.needsApiKey': '[needs API key]',
   'onboarding.navHint': '↑/↓ navigate · Enter to select · Esc to exit',
   'onboarding.selected': 'Selected: {name}',
@@ -46,6 +49,10 @@ export const en = {
     'Could not reach {url}. Is the server running / does the URL look right?',
   'onboarding.noModelsHint.ollama': 'Try: `ollama pull qwen2.5-coder`.',
   'onboarding.noModelsHint.lmstudio': 'Load a model in LM Studio first.',
+  // The one moment a user has a live Unsloth server and a dead agent —
+  // so the `--disable-tools` requirement is spelled out here verbatim.
+  'onboarding.noModelsHint.unsloth':
+    'Load a model in Unsloth Studio, then start the server for agents with `unsloth run --model <repo> --disable-tools -p 8888` — without `--disable-tools` Unsloth answers tool calls itself and LocalCode just sits there.',
   'onboarding.noModelsHint.custom':
     'Custom endpoint returned no /v1/models — check the URL.',
   'onboarding.noModelsHint.cloud':
@@ -169,6 +176,12 @@ export const en = {
     "  • Cloud providers need an API key — get one from each provider's dashboard, or set the env var (e.g. $OPENAI_API_KEY).",
   'provider.warn.openrouter':
     '  ! OpenRouter selected — confirm you can reach openrouter.ai before applying.',
+  // Shown while the Unsloth row is highlighted or selected. The overlay
+  // is the primary way users switch provider, and a server started
+  // without --disable-tools answers tool calls itself: LocalCode then
+  // looks frozen with no error anywhere.
+  'provider.warn.unsloth':
+    '  ! Unsloth Studio: start the server with --disable-tools (`unsloth run --model <repo> --disable-tools -p 8888`), or it answers tool calls itself and LocalCode just sits there.',
   'provider.error.customUrlRequired': 'Custom URL required',
   'provider.error.cloudUrlEmpty': 'Cloud provider URL is empty',
   'provider.error.urlScheme': 'URL must start with http:// or https://',
@@ -184,6 +197,13 @@ export const en = {
     'Editing API key (visible — clear after pasting) · Enter to save · Tab to switch to URL · Esc to cancel',
   'provider.footer':
     '↑/↓ navigate · (space) select · (enter) edit URL · (tab/e) edit key · (ctrl+enter / a) apply · (esc) cancel',
+
+  // ---------- /provider command (text output) ----------
+  // Printed right after switching to Unsloth: the server intercepts tool
+  // calls unless launched with --disable-tools, and a silently idle agent
+  // is unattributable to the provider switch minutes later.
+  'provider.cmd.unslothDisableTools':
+    'Start Unsloth Studio with --disable-tools, or it answers tool calls itself and LocalCode gets nothing back: `unsloth run --model <repo> --disable-tools -p 8888`',
 
   // ---------- /mcp add-server overlay ----------
   'mcp.add.title': 'Add MCP server',

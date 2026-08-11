@@ -44,6 +44,12 @@ export interface ProbeCapabilitiesParams {
   baseUrl: string;
   backend: Backend | undefined;
   model: string;
+  /**
+   * Bearer token for keyed local servers (Unsloth Studio). Without it
+   * every probe 401s and the all-false report is cached for the TTL —
+   * i.e. grammar / cache_prompt stay off on a server that supports them.
+   */
+  apiKey?: string;
   /** Injected for tests; defaults to global `fetch`. */
   fetchImpl?: FetchImpl;
   /** Override the on-disk cache path (tests). */
@@ -64,8 +70,19 @@ function defaultCachePath(): string {
   return path.join(os.homedir(), '.localcode', 'capabilities.json');
 }
 
-function cacheKey(backend: string, baseUrl: string, model: string): string {
-  return `${backend}|${baseUrl}|${model}`;
+/**
+ * Cache identity. `authed` is part of the key because an anonymous probe
+ * against a keyed server 401s on every knob: without it, the all-false
+ * report written before the user pasted their key would be served for
+ * the rest of the TTL and the knobs would never come back.
+ */
+function cacheKey(
+  backend: string,
+  baseUrl: string,
+  model: string,
+  authed: boolean,
+): string {
+  return `${backend}|${baseUrl}|${model}${authed ? '|auth' : ''}`;
 }
 
 interface CacheFile {
@@ -129,13 +146,14 @@ async function probeOne(
   model: string,
   extra: Record<string, unknown>,
   timeoutMs: number,
+  headers: Record<string, string>,
 ): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchImpl(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         model,
         // Minimal, non-streaming, near-zero-cost completion.
@@ -182,7 +200,8 @@ export async function probeCapabilities(
   const cachePath = params.cachePath ?? defaultCachePath();
   const ttlMs = params.ttlMs ?? DEFAULT_CAPABILITY_TTL_MS;
   const timeoutMs = params.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
-  const key = cacheKey(backendName, baseUrl, model);
+  const hasKey = params.apiKey !== undefined && params.apiKey.length > 0;
+  const key = cacheKey(backendName, baseUrl, model, hasKey);
 
   if (!params.noCache) {
     const cache = await readCache(cachePath);
@@ -193,11 +212,17 @@ export async function probeCapabilities(
   }
 
   const url = chatUrl(baseUrl);
+  // A keyed local server (Unsloth Studio) answers 401 to an anonymous
+  // probe, which would read as "supports nothing" and get cached.
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(hasKey ? { Authorization: `Bearer ${params.apiKey ?? ''}` } : {}),
+  };
 
   // Probe each knob independently — a server may honour one but not
   // another (e.g. LM Studio: json_schema + grammar yes, cache_prompt no).
   const [grammar, jsonSchema, logitBias, cachePrompt] = await Promise.all([
-    probeOne(fetchImpl, url, model, { grammar: PROBE_GRAMMAR }, timeoutMs),
+    probeOne(fetchImpl, url, model, { grammar: PROBE_GRAMMAR }, timeoutMs, headers),
     probeOne(
       fetchImpl,
       url,
@@ -212,9 +237,10 @@ export async function probeCapabilities(
         },
       },
       timeoutMs,
+      headers,
     ),
-    probeOne(fetchImpl, url, model, { logit_bias: { 0: 0 } }, timeoutMs),
-    probeOne(fetchImpl, url, model, { cache_prompt: true }, timeoutMs),
+    probeOne(fetchImpl, url, model, { logit_bias: { 0: 0 } }, timeoutMs, headers),
+    probeOne(fetchImpl, url, model, { cache_prompt: true }, timeoutMs, headers),
   ]);
 
   const report: CapabilityReport = {

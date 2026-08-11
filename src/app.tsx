@@ -1051,13 +1051,17 @@ function App(props: AppProps): React.JSX.Element {
       if (existing !== null) return existing;
       throw err;
     }
-    // LM Studio defaults to 3 parallel slots; everything else keeps the
-    // schema default of 5. The check is on the active backend at
-    // construction time — switching backend mid-session does NOT
-    // re-derive this (rare path; the schema's `maxConcurrent` already
-    // ships a safe default).
-    const isLmStudio = cfg.backend.type === 'lmstudio';
-    const fallbackMaxConcurrent = isLmStudio ? 3 : 5;
+    // Single-process local servers share one inference queue, so they
+    // get 3 parallel workers instead of the schema default of 5. LM
+    // Studio defaults to 3 slots; Unsloth Studio is one llama.cpp/MLX
+    // process whose `--parallel` default we cannot observe, so the
+    // conservative bound is the right guess. The check is on the active
+    // backend at construction time — switching backend mid-session does
+    // NOT re-derive this (rare path; the schema's `maxConcurrent`
+    // already ships a safe default).
+    const isSingleSlotLocal =
+      cfg.backend.type === 'lmstudio' || cfg.backend.type === 'unsloth';
+    const fallbackMaxConcurrent = isSingleSlotLocal ? 3 : 5;
     const agentsCfg = cfg.agents ?? {
       workerModel: cfg.model.current,
       maxConcurrent: fallbackMaxConcurrent,
@@ -1616,7 +1620,17 @@ function App(props: AppProps): React.JSX.Element {
     let cancelled = false;
     void (async () => {
       try {
-        const report = await probeCapabilities({ baseUrl, backend, model });
+        // Keyed local servers (Unsloth Studio) 401 an anonymous probe —
+        // send the same key the adapter uses or every knob reads false.
+        const probeKey = resolveApiKey(backend, config.backend.apiKey);
+        const report = await probeCapabilities({
+          baseUrl,
+          backend,
+          model,
+          ...(probeKey !== undefined && probeKey.length > 0
+            ? { apiKey: probeKey }
+            : {}),
+        });
         if (cancelled) return;
         // `compileToolGrammar` is sync — compile once per (model, backend).
         const toolGrammar =
@@ -1645,6 +1659,9 @@ function App(props: AppProps): React.JSX.Element {
   }, [
     config?.backend.type,
     config?.backend.baseUrl,
+    // Pasting a key for a keyed local server must re-probe: the previous
+    // (anonymous) run cached an all-false report for the whole TTL.
+    config?.backend.apiKey,
     config?.model.current,
     config?.inference?.grammarLock,
     config?.inference?.logitBanlist,
@@ -6330,14 +6347,17 @@ function App(props: AppProps): React.JSX.Element {
         // ignore
       }
       try {
-        // R12 (Agent F): the overlay now passes an optional apiKey for
-        // cloud providers. Persist it explicitly only when non-empty —
-        // a blank string would shadow the env-var fallback in
-        // `resolveApiKey`. Local providers always pass `undefined`.
-        const trimmedKey =
-          typeof apiKey === 'string' && apiKey.length > 0 ? apiKey : undefined;
+        // R12 (Agent F): the overlay passes an optional apiKey per row.
+        // An ABSENT key must be written as '' rather than `undefined`:
+        // `update()` skips undefined, so the previous provider's secret
+        // would survive the switch and then be sent to the new endpoint
+        // (an `sk-proj-…` posted to localhost:8888 — 401 on every turn)
+        // while shadowing the env-var fallback in `resolveApiKey`. An
+        // empty string is treated as "unset" by every reader.
+        const nextKey =
+          typeof apiKey === 'string' && apiKey.length > 0 ? apiKey : '';
         const merged = configManager.update({
-          backend: { type: backend, baseUrl, apiKey: trimmedKey },
+          backend: { type: backend, baseUrl, apiKey: nextKey },
         });
         setConfig(merged);
       } catch {
@@ -6821,6 +6841,7 @@ function App(props: AppProps): React.JSX.Element {
       anthropic: urlFor('anthropic'),
       openrouter: urlFor('openrouter'),
       google: urlFor('google'),
+      unsloth: urlFor('unsloth'),
       custom: liveType === 'custom' ? live : '',
     };
   }, [config]);
@@ -6846,6 +6867,7 @@ function App(props: AppProps): React.JSX.Element {
       anthropic: keyFor('anthropic'),
       openrouter: keyFor('openrouter'),
       google: keyFor('google'),
+      unsloth: keyFor('unsloth'),
       custom: keyFor('custom'),
     };
   }, [config?.backend.type, config?.backend.apiKey]);

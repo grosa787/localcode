@@ -132,6 +132,33 @@
 .dotGreen { background: var(--success); box-shadow: 0 0 6px rgba(134, 239, 172, 0.4); }
 .dotRed   { background: var(--danger);  box-shadow: 0 0 6px rgba(252, 165, 165, 0.4); }
 
+/* Inline caveat under a provider row (Unsloth's --disable-tools trap). */
+.note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 var(--sp-3) var(--sp-2) var(--sp-3);
+  padding: var(--sp-2);
+  background: rgba(250, 204, 21, 0.07);
+  border: 1px solid rgba(250, 204, 21, 0.22);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  line-height: 1.4;
+}
+
+.note strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.note code {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
 .keyRow {
   display: flex;
   gap: var(--sp-2);

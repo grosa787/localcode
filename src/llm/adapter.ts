@@ -446,7 +446,8 @@ export class LLMAdapter {
    * Header rules per provider:
    *   - `ollama` / `lmstudio`        — no auth, no aggregator headers.
    *   - `openai` / `openrouter` /
-   *     `google` / `custom`          — `Authorization: Bearer <apiKey>`
+   *     `google` / `unsloth` /
+   *     `custom`                     — `Authorization: Bearer <apiKey>`
    *                                    when `apiKey` is set.
    *   - `openrouter`                 — also emits `HTTP-Referer` and
    *                                    `X-Title` so requests appear under
@@ -457,6 +458,13 @@ export class LLMAdapter {
    *                                    auth (the request would 401
    *                                    anyway — there is no behavioural
    *                                    side-effect to add).
+   *
+   * `unsloth` is the odd one out: it serves from localhost but rejects
+   * unauthenticated requests, so it must stay in the bearer set even
+   * though it is a local, zero-cost provider. Dropping it here 401s
+   * every request with a clean compile — the predicate is a `||` chain,
+   * not a Record, so tsc cannot catch the omission.
+   * `tests/llm/adapter-unsloth-auth.test.ts` is the regression guard.
    *
    * Custom headers from the user override every default we set —
    * applied last via `Object.assign`.
@@ -479,6 +487,7 @@ export class LLMAdapter {
       backend === 'openai' ||
       backend === 'openrouter' ||
       backend === 'google' ||
+      backend === 'unsloth' ||
       backend === 'custom';
 
     if (this.apiKey && isOpenAiCompatCloud) {
@@ -490,6 +499,11 @@ export class LLMAdapter {
       // shows up tagged on the user's dashboard. Not strictly required
       // (OR will accept anonymous requests too) but the dashboard
       // entries are useful when debugging quota / cost.
+      //
+      // KEEP THIS OPENROUTER-ONLY. Do not generalise these attribution
+      // headers to every backend: Unsloth documents that an extra
+      // per-request header invalidates the KV cache and costs ~90%
+      // throughput on local models.
       headers['HTTP-Referer'] = 'https://github.com/localcode';
       headers['X-Title'] = 'LocalCode';
     }

@@ -13,5 +13,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Node >= 22's built-in (undefined) `localStorage` shadows jsdom's;
+    // the setup file restores one so persistence tests can run.
+    setupFiles: [resolve(__dirname, 'src/test-setup.ts')],
   },
 });

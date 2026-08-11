@@ -55,7 +55,7 @@ localcode --web                      # browser UI (opens automatically)
 
 ## Highlights
 
-- **Bring your own LLM** — Ollama, LM Studio, OpenAI, Anthropic, OpenRouter, Google Gemini, and any OpenAI-compatible URL (Groq, Together, Fireworks, Mistral, vLLM, llama.cpp…). One UI, seven backends.
+- **Bring your own LLM** — Ollama, LM Studio, Unsloth Studio, OpenAI, Anthropic, OpenRouter, Google Gemini, and any OpenAI-compatible URL (Groq, Together, Fireworks, Mistral, vLLM, llama.cpp…). One UI, eight backends.
 - **Two surfaces, same brain** — gorgeous ink TUI **and** a polished web UI (tabs, dock, voice in/out, drag-drop, PDF, whiteboard).
 - **Real tool calling with approval gates** — diff previews, command previews, per-tool auto-approve, five **permission profiles** (`default`, `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions`).
 - **Sub-agents on-demand** — spawn specialist workers (`architect`, `debugger`, `security-reviewer`, language reviewers, etc.) from a curated catalog. Switch between them, send extra context, see live progress.
@@ -91,6 +91,7 @@ localcode --web                      # browser UI (opens automatically)
 | ----------------- | ----- | ----------------------------------------------------------------------- |
 | Ollama            | Local | Install Ollama, run `ollama serve`                                      |
 | LM Studio         | Local | Install LM Studio, enable the local server                              |
+| Unsloth Studio    | Local | `unsloth run --model <repo> --disable-tools -p 8888` — **needs an API key** (`UNSLOTH_API_KEY`) |
 | OpenAI            | Cloud | API key via `OPENAI_API_KEY` or `/provider`                             |
 | Anthropic         | Cloud | API key via `ANTHROPIC_API_KEY` or `/provider`                          |
 | OpenRouter        | Cloud | API key via `OPENROUTER_API_KEY` or `/provider`                         |
@@ -98,6 +99,33 @@ localcode --web                      # browser UI (opens automatically)
 | Custom            | Cloud | Any OpenAI-compatible base URL (Groq, Together, Fireworks, Mistral, …)  |
 
 Explicit `apiKey` in `~/.localcode/config.toml` wins; environment variables are the fallback. See [docs/PROVIDERS.md](localcode/docs/PROVIDERS.md) for per-provider examples.
+
+### Unsloth Studio: two things that will bite you
+
+Unsloth Studio is a local GGUF/MLX server (llama.cpp + MLX) on
+`http://localhost:8888/v1`, spoken to over the plain OpenAI-compatible
+API. Install with `curl -fsSL https://unsloth.ai/install.sh | sh`, then:
+
+```sh
+unsloth run --model unsloth/gemma-4-26B-A4B-it-GGUF --disable-tools -p 8888
+```
+
+1. **`--disable-tools` is mandatory.** Without it Unsloth runs its own
+   server-side tool loop and *intercepts* tool calls instead of handing
+   them back. LocalCode does all its work through tool calls, so the
+   agent replies with prose and never touches a file — **with no error
+   message anywhere**. If LocalCode looks inert against Unsloth, this is
+   why.
+2. **It needs an API key even on localhost.** Ollama and LM Studio take
+   no key; Unsloth 401s without `Authorization: Bearer sk-unsloth-…`.
+   Grab it from **Settings → API** in Unsloth Studio (`unsloth run`
+   prints it too) and set `UNSLOTH_API_KEY`, or paste it into
+   `/provider`.
+
+macOS on Apple Silicon is supported with no GPU and no CUDA (macOS 12+,
+Python >=3.11 <3.14). Windows and Linux inherit Unsloth's own
+prerequisite of an NVIDIA GPU with CUDA. Full walkthrough:
+**[docs/PROVIDERS.md](localcode/docs/PROVIDERS.md#unsloth-studio-local)**.
 
 <br/>
 
@@ -230,7 +258,7 @@ docker run --rm -p 7777:7777 \
   --web --web-host 0.0.0.0 --no-open
 ```
 
-For local backends (Ollama / LM Studio) running on the host, use
+For local backends (Ollama / LM Studio / Unsloth Studio) running on the host, use
 `host.docker.internal` (Docker Desktop) or add
 `--add-host=host.docker.internal:host-gateway` on Linux. Full usage,
 auth, persistence, and compose recipes: **[docs/DOCKER.md](docs/DOCKER.md)**.
@@ -322,7 +350,7 @@ Every slash command runs **locally** — none are sent to the LLM.
 | `/help`            | List every registered command.                                                        |
 | `/init`            | Scan project & write `.localcode/LOCALCODE.md`.                                       |
 | `/model [name]`    | Open picker or switch directly.                                                       |
-| `/provider [...]`  | Switch backend (Ollama / LM Studio / OpenAI / Anthropic / OpenRouter / Google / custom). |
+| `/provider [...]`  | Switch backend (Ollama / LM Studio / Unsloth / OpenAI / Anthropic / OpenRouter / Google / custom). |
 | `/profile [name]`  | Switch permission profile: `default` · `acceptEdits` · `plan` · `dontAsk` · `bypassPermissions`. |
 | `/style [name]`    | Output style: `concise` · `explanatory` · `verbose`.                                  |
 | `/statusline`      | Configure the status line template.                                                   |

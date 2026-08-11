@@ -502,6 +502,13 @@ export const en: Record<TranslationKey, string> = {
   'providerPicker.switched': 'Switched to {name}; using {model}',
   'providerPicker.failed': 'Failed to switch provider',
 
+  // Unsloth Studio
+  'provider.unsloth.disableTools.title': 'Start Unsloth Studio with --disable-tools',
+  'provider.unsloth.disableTools.body':
+    'By default Unsloth Studio runs its own tool loop and never hands tool calls back to the client. LocalCode drives everything through tool calls, so the model will look like it is doing nothing. Launch the server like this:',
+  'provider.unsloth.disableTools.command':
+    'unsloth run --model <repo> --disable-tools -p 8888',
+
   // Model picker
   'modelPicker.aria': 'Select a model',
   'modelPicker.filter': 'Filter models…',

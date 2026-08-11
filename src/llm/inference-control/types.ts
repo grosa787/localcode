@@ -50,8 +50,20 @@ export interface GrammarSpec {
   derivedFromExecutor: boolean;
 }
 
-/** Local backends that may honour constrained-decoding knobs. */
-export const LOCAL_BACKENDS: readonly Backend[] = ['ollama', 'lmstudio', 'custom'];
+/**
+ * Local backends that may honour constrained-decoding knobs.
+ *
+ * `unsloth` belongs here despite requiring an API key: Unsloth Studio
+ * runs llama.cpp / MLX under an OpenAI-compatible facade, so `grammar`
+ * and `cache_prompt` are genuinely in scope. Membership here is about
+ * INFERENCE SHAPE, never about auth — see `PROVIDER_DEFAULTS.unsloth`.
+ */
+export const LOCAL_BACKENDS: readonly Backend[] = [
+  'ollama',
+  'lmstudio',
+  'unsloth',
+  'custom',
+];
 
 /** Cloud backends that NEVER get probed (all capabilities false). */
 export const CLOUD_BACKENDS: readonly Backend[] = [
@@ -67,6 +79,12 @@ export const CLOUD_BACKENDS: readonly Backend[] = [
  * llama.cpp / vLLM endpoint; the capability probe is the real gate, so
  * a `custom` backend that is actually a cloud proxy simply reports all
  * capabilities false and the adapter omits the knobs.
+ *
+ * `unsloth` is probed WITH its bearer token (`ProbeCapabilitiesParams.
+ * apiKey`) — an anonymous probe would 401 on every knob and cache
+ * "supports nothing" for the whole TTL, silently disabling grammar and
+ * cache_prompt on a llama.cpp server that does support them. If the key
+ * is missing the probe still fails closed: all-false, nothing attached.
  */
 export function isLocalInferenceBackend(backend: Backend | undefined): boolean {
   if (!backend) return false;

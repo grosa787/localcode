@@ -10,7 +10,8 @@
  *   - Pricing comes from `getPricing(provider, model)` in
  *     `src/llm/pricing.ts`. That helper returns:
  *       - the `ModelPricing` row for known cloud models,
- *       - `{ 0, 0, 0 }` for local providers (Ollama, LM Studio),
+ *       - `{ 0, 0, 0 }` for local providers (Ollama, LM Studio,
+ *         Unsloth Studio),
  *       - `null` for unknown models (e.g. a fresh OpenRouter slug not
  *         yet in the static table; the estimator surfaces this as
  *         `unknown: true` so the UI can render a `?`).
@@ -23,8 +24,10 @@
  *     turns). Defaults to 500 when not supplied. The range `[low, high]`
  *     uses a `[0.5x, 2x]` envelope around the estimate to capture
  *     the inherent variance of completion length.
- *   - Local providers (`ollama`, `lmstudio`) return `{ 0, [0, 0], false }`
- *     so the UI can hide the chip without a special-case.
+ *   - Local providers (`ollama`, `lmstudio`, `unsloth`) return
+ *     `{ 0, [0, 0], false }` so the UI can hide the chip without a
+ *     special-case. `unsloth` needs an API key but still costs nothing
+ *     per token — the key is auth, not billing.
  */
 
 import { getPricing } from '@/llm/pricing';

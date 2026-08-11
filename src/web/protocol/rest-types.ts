@@ -416,6 +416,7 @@ export const GetConfigResponseSchema: z.ZodType<GetConfigResponse> = z.object({
       'anthropic',
       'openrouter',
       'google',
+      'unsloth',
       'custom',
     ]),
     baseUrl: z.string(),
@@ -569,6 +570,7 @@ export const ListProvidersConfigResponseSchema: z.ZodType<ListProvidersConfigRes
       anthropic: PerProviderEntrySchema,
       openrouter: PerProviderEntrySchema,
       google: PerProviderEntrySchema,
+      unsloth: PerProviderEntrySchema,
       custom: PerProviderEntrySchema,
     }),
   });

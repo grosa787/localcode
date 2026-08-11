@@ -86,8 +86,9 @@ const BUILTIN_COMMAND_METADATA: readonly CommandSummary[] = [
   },
   {
     name: 'provider',
-    description: 'Switch between Ollama, LM Studio, or a custom backend URL.',
-    usage: '/provider [show | ollama | lmstudio | custom <url>]',
+    description:
+      'Switch between Ollama, LM Studio, Unsloth Studio, or a custom backend URL. Unsloth Studio must be started with --disable-tools, or it answers tool calls itself and LocalCode appears to do nothing.',
+    usage: '/provider [show | ollama | lmstudio | unsloth | custom <url>]',
   },
   {
     name: 'resume',

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```sh
 bun install                                       # install deps (pinned via bun.lock)
 bun run dev                                       # run the CLI in dev mode (alias for src/cli.tsx)
-bun test                                          # full test suite (bun:test) — 3377 passing
+bun test                                          # full test suite (bun:test) — 3827 passing
 bun test tests/llm/adapter-cloud.test.ts          # single file
 bun test --test-name-pattern "preview"            # subset by test name
 bunx tsc --noEmit                                 # type-check (no emit)
@@ -60,9 +60,11 @@ Read `docs/COMMANDS.md`, `docs/TOOLS.md`, `docs/CONFIG.md`, `docs/PROVIDERS.md`,
 
 ### Adapter abstraction
 
-`LLMAdapter` (OpenAI-compatible) handles **Ollama, LM Studio, OpenAI, OpenRouter, Google Gemini, Custom**. `AnthropicAdapter` (separate file) handles Anthropic's Messages API — different endpoint, headers (`x-api-key`), system extraction, and SSE event shape. `app.tsx` has a `createAdapter(opts)` factory returning either. Both expose the same callback shape (`streamChat`, `getModels`, `ping`, `cancel`).
+`LLMAdapter` (OpenAI-compatible) handles **Ollama, LM Studio, Unsloth Studio, OpenAI, OpenRouter, Google Gemini, Custom**. `AnthropicAdapter` (separate file) handles Anthropic's Messages API — different endpoint, headers (`x-api-key`), system extraction, and SSE event shape. `app.tsx` has a `createAdapter(opts)` factory returning either. Both expose the same callback shape (`streamChat`, `getModels`, `ping`, `cancel`).
 
 API keys: explicit `BackendConfig.apiKey` wins; otherwise `resolveApiKey(backend)` reads per-provider env vars. Multimodal: `MessageContentPart[]` with `image_url` is passed through for OpenAI-compat; `toAnthropicMessageContent()` converts to Anthropic's `image` source shape.
+
+**`unsloth` is classified with the bearer-auth group (`openai`/`openrouter`/`google`/`custom`) in `isOpenAiCompatCloud`, NOT with the no-auth local group (`ollama`/`lmstudio`)** — Unsloth Studio requires `Authorization: Bearer sk-unsloth-…` despite running on localhost, so grouping it as "local" 401s every request. Local-vs-cloud is a statement about inference shape; it is **not** an auth predicate. Correspondingly, **never attach per-turn headers for this backend** — Unsloth documents that a per-request attribution header invalidates the KV cache and costs ~90% throughput on local models, which is the same prefix-cache invariant that keeps the system prompt byte-stable, applied to headers.
 
 ### Two-phase tool execution + permission profiles
 

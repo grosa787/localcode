@@ -20,6 +20,12 @@
  * fakes for `rest` + `store`.
  */
 
+// String TABLES only — importing `../i18n` would pull the zustand store
+// (and its localStorage reads) into this deliberately framework-agnostic
+// module and into every test that fakes `rest` / `store`.
+import { en } from '../i18n/en';
+import { ru } from '../i18n/ru';
+import type { Locale, TranslationKey } from '../i18n/types';
 import type {
   Backend,
   CommandSummary,
@@ -106,6 +112,12 @@ export interface SlashExecCtx {
   model: string | null;
   /** Full known-command list — used by `/help`. */
   commands: ReadonlyArray<CommandSummary>;
+  /**
+   * Active UI locale. Optional so existing callers/tests keep compiling;
+   * absent means English. Only the instruction-carrying strings (e.g.
+   * the Unsloth `--disable-tools` note) are localised here.
+   */
+  locale?: Locale;
 }
 
 /**
@@ -275,7 +287,7 @@ export async function executeSlashCommand(
     if (args.length === 0) {
       return {
         kind: 'error',
-        text: 'Usage: /provider <ollama|lmstudio|openai|anthropic|openrouter|google|custom>',
+        text: 'Usage: /provider <ollama|lmstudio|openai|anthropic|openrouter|google|unsloth|custom>',
       };
     }
     const head = args.split(/\s+/u)[0] ?? '';
@@ -285,7 +297,16 @@ export async function executeSlashCommand(
     }
     try {
       await ctx.rest.setProvider({ type: backend });
-      return { kind: 'config-changed', text: `Provider switched to ${backend}` };
+      // Unsloth Studio runs its own server-side tool loop unless started
+      // with --disable-tools, swallowing the tool calls LocalCode depends
+      // on. The failure mode is silent, so say it at switch time — and
+      // say it in the user's language, since this is the one line here
+      // that carries an instruction rather than a status.
+      const text =
+        backend === 'unsloth'
+          ? `Provider switched to unsloth. ${unslothDisableToolsNote(ctx.locale)}`
+          : `Provider switched to ${backend}`;
+      return { kind: 'config-changed', text };
     } catch (err) {
       return {
         kind: 'error',
@@ -346,6 +367,24 @@ export async function executeSlashCommand(
 }
 
 /**
+ * Shown right after `/provider unsloth` succeeds. Unsloth Studio's server
+ * intercepts tool calls in its own loop by default and never returns them
+ * to the client, so an agent that drives everything through tools looks
+ * frozen. `--disable-tools` is the documented fix.
+ *
+ * Built from the same three i18n keys the ProviderPicker row renders, so
+ * the RU copy is never bypassed. Locale defaults to English when the
+ * caller (e.g. a test fake) doesn't supply one.
+ */
+function unslothDisableToolsNote(locale: Locale | undefined): string {
+  const table: Record<TranslationKey, string> = locale === 'ru' ? ru : en;
+  return [
+    table['provider.unsloth.disableTools.body'],
+    `\`${table['provider.unsloth.disableTools.command']}\``,
+  ].join(' ');
+}
+
+/**
  * Narrow a freeform argument to a known `Backend` literal. Accepts the
  * common `lm-studio` alias and normalises it to `lmstudio`.
  */
@@ -358,6 +397,7 @@ function parseBackend(raw: string): Backend | null {
     v === 'anthropic' ||
     v === 'openrouter' ||
     v === 'google' ||
+    v === 'unsloth' ||
     v === 'custom'
   ) {
     return v;

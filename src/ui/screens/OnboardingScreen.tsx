@@ -4,8 +4,10 @@
  * Step machine (R27):
  *   backendSelect → urlInput → apiKeyInput? → scanning → done
  *
- * The `apiKeyInput` step is skipped for local providers (`ollama`,
- * `lmstudio`) and for `custom` when the user submits an empty key.
+ * The `apiKeyInput` step is gated on `PROVIDER_DEFAULTS[b].requiresApiKey`
+ * (plus `custom`, which may submit an empty key), NOT on "is this a local
+ * provider" — `unsloth` runs on localhost yet rejects unauthenticated
+ * requests, so skipping the key step for it would 401 every request.
  *
  * The parent (Agent 8) supplies `pingBackend` and `fetchModels`
  * callbacks — these wrap `LLMAdapter` so this screen stays pure UI.
@@ -38,8 +40,14 @@ interface BackendChoice {
   readonly id: Backend | 'exit';
   readonly label: string;
   readonly defaultUrl: string;
-  /** True for cloud providers requiring an API key (UI hint). */
-  readonly cloud: boolean;
+  /**
+   * Drives the "[needs API key]" tag. Sourced from `PROVIDER_DEFAULTS`
+   * rather than a hand-kept "is this cloud?" boolean: `unsloth` is a
+   * localhost server that still requires a bearer token, so keying the
+   * tag off cloud-ness would hide the one hint that prevents a fresh
+   * user finishing onboarding with no key.
+   */
+  readonly needsApiKey: boolean;
   readonly kind: 'backend' | 'separator' | 'exit';
 }
 
@@ -54,53 +62,60 @@ const CHOICES: readonly BackendChoice[] = [
     id: 'ollama',
     label: PROVIDER_META.ollama.displayName,
     defaultUrl: PROVIDER_DEFAULTS.ollama.baseUrl,
-    cloud: false,
+    needsApiKey: PROVIDER_DEFAULTS.ollama.requiresApiKey,
     kind: 'backend',
   },
   {
     id: 'lmstudio',
     label: PROVIDER_META.lmstudio.displayName,
     defaultUrl: PROVIDER_DEFAULTS.lmstudio.baseUrl,
-    cloud: false,
+    needsApiKey: PROVIDER_DEFAULTS.lmstudio.requiresApiKey,
+    kind: 'backend',
+  },
+  {
+    id: 'unsloth',
+    label: PROVIDER_META.unsloth.displayName,
+    defaultUrl: PROVIDER_DEFAULTS.unsloth.baseUrl,
+    needsApiKey: PROVIDER_DEFAULTS.unsloth.requiresApiKey,
     kind: 'backend',
   },
   {
     id: 'openai',
     label: PROVIDER_META.openai.displayName,
     defaultUrl: PROVIDER_DEFAULTS.openai.baseUrl,
-    cloud: true,
+    needsApiKey: PROVIDER_DEFAULTS.openai.requiresApiKey,
     kind: 'backend',
   },
   {
     id: 'anthropic',
     label: PROVIDER_META.anthropic.displayName,
     defaultUrl: PROVIDER_DEFAULTS.anthropic.baseUrl,
-    cloud: true,
+    needsApiKey: PROVIDER_DEFAULTS.anthropic.requiresApiKey,
     kind: 'backend',
   },
   {
     id: 'openrouter',
     label: PROVIDER_META.openrouter.displayName,
     defaultUrl: PROVIDER_DEFAULTS.openrouter.baseUrl,
-    cloud: true,
+    needsApiKey: PROVIDER_DEFAULTS.openrouter.requiresApiKey,
     kind: 'backend',
   },
   {
     id: 'google',
     label: PROVIDER_META.google.displayName,
     defaultUrl: PROVIDER_DEFAULTS.google.baseUrl,
-    cloud: true,
+    needsApiKey: PROVIDER_DEFAULTS.google.requiresApiKey,
     kind: 'backend',
   },
   {
     id: 'custom',
     label: PROVIDER_META.custom.displayName,
     defaultUrl: PROVIDER_DEFAULTS.custom.baseUrl,
-    cloud: false,
+    needsApiKey: PROVIDER_DEFAULTS.custom.requiresApiKey,
     kind: 'backend',
   },
-  { id: 'exit', label: '─────────', defaultUrl: '', cloud: false, kind: 'separator' },
-  { id: 'exit', label: 'Exit', defaultUrl: '', cloud: false, kind: 'exit' },
+  { id: 'exit', label: '─────────', defaultUrl: '', needsApiKey: false, kind: 'separator' },
+  { id: 'exit', label: 'Exit', defaultUrl: '', needsApiKey: false, kind: 'exit' },
 ];
 
 interface BackendSelectProps {
@@ -189,15 +204,15 @@ function BackendSelect({ onPick, onExit }: BackendSelectProps): React.JSX.Elemen
             );
           }
           const active = i === index;
-          // Cloud providers get a "[needs API key]" tag; render it
-          // dimmed so the eye still parses the provider name first.
+          // Providers that require a key get a "[needs API key]" tag;
+          // render it dimmed so the eye still parses the name first.
           return (
             <Box key={`choice-${i}`}>
               <Text color={active ? noxPalette.light : noxPalette.white}>
                 {active ? '❯ ' : '  '}
                 {c.label}
               </Text>
-              {c.cloud && (
+              {c.needsApiKey && (
                 <Text color={textMuted}>
                   {'  '}
                   {/* LOCALE-APPLY-SECTION */}
@@ -594,6 +609,10 @@ function OnboardingScreen({
             hint = t('onboarding.noModelsHint.ollama');
           } else if (backend === 'lmstudio') {
             hint = t('onboarding.noModelsHint.lmstudio');
+          } else if (backend === 'unsloth') {
+            // Also the one place a user with a live server learns that
+            // it must be launched with `--disable-tools`.
+            hint = t('onboarding.noModelsHint.unsloth');
           } else if (backend === 'custom') {
             hint = t('onboarding.noModelsHint.custom');
           } else {

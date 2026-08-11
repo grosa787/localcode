@@ -183,6 +183,69 @@ describe('probeCapabilities', () => {
     await expect(fs.readFile(cachePath, 'utf8')).rejects.toBeDefined();
   });
 
+  test('apiKey is sent as a bearer token (keyed local servers)', async () => {
+    const seen: (string | null)[] = [];
+    const impl: FetchImpl = async (_url, init) => {
+      seen.push(new Headers(init?.headers ?? {}).get('authorization'));
+      return new Response('{}', { status: 200 });
+    };
+    const report = await probeCapabilities({
+      baseUrl: 'http://localhost:8888/v1',
+      backend: 'unsloth',
+      model: 'unsloth/qwen3-coder-GGUF',
+      apiKey: 'sk-unsloth-abc',
+      fetchImpl: impl,
+      cachePath: tmpCache(),
+    });
+    expect(report.grammar).toBe(true);
+    expect(seen.length).toBe(4);
+    for (const h of seen) expect(h).toBe('Bearer sk-unsloth-abc');
+  });
+
+  test('no apiKey → no Authorization header at all', async () => {
+    const seen: (string | null)[] = [];
+    const impl: FetchImpl = async (_url, init) => {
+      seen.push(new Headers(init?.headers ?? {}).get('authorization'));
+      return new Response('{}', { status: 200 });
+    };
+    await probeCapabilities({
+      baseUrl: 'http://localhost:1234/v1',
+      backend: 'lmstudio',
+      model: 'qwen',
+      fetchImpl: impl,
+      cachePath: tmpCache(),
+    });
+    expect(seen.length).toBe(4);
+    for (const h of seen) expect(h).toBeNull();
+  });
+
+  test('an anonymous all-false report does not mask a later keyed probe', async () => {
+    // Pasting the key must be able to turn the knobs back on inside the
+    // 7-day TTL — the cache key carries whether the probe was authed.
+    const cachePath = tmpCache();
+    const anon: FetchImpl = async (_url, init) =>
+      new Response('', {
+        status: new Headers(init?.headers ?? {}).get('authorization') === null ? 401 : 200,
+      });
+    const first = await probeCapabilities({
+      baseUrl: 'http://localhost:8888/v1',
+      backend: 'unsloth',
+      model: 'm',
+      fetchImpl: anon,
+      cachePath,
+    });
+    expect(first.grammar).toBe(false);
+    const second = await probeCapabilities({
+      baseUrl: 'http://localhost:8888/v1',
+      backend: 'unsloth',
+      model: 'm',
+      apiKey: 'sk-unsloth-abc',
+      fetchImpl: anon,
+      cachePath,
+    });
+    expect(second.grammar).toBe(true);
+  });
+
   test('network error → capability false (no throw)', async () => {
     const impl: FetchImpl = async () => {
       throw new Error('ECONNREFUSED');

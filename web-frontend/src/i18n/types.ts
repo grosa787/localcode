@@ -503,6 +503,14 @@ export type TranslationKey =
   | 'providerPicker.switched'
   | 'providerPicker.failed'
 
+  // Unsloth Studio warning. Rendered by whichever surface lets the user
+  // pick or configure the `unsloth` backend — without --disable-tools the
+  // server answers tool calls itself and LocalCode looks frozen, so this
+  // copy has to reach the user before the first turn.
+  | 'provider.unsloth.disableTools.title'
+  | 'provider.unsloth.disableTools.body'
+  | 'provider.unsloth.disableTools.command'
+
   // Model picker
   | 'modelPicker.aria'
   | 'modelPicker.filter'

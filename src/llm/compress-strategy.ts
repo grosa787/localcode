@@ -57,8 +57,8 @@ export const TRUNCATE_TAIL_KEEP = 30;
  *   - anthropic  → `claude-3-5-haiku-latest`
  *   - google     → `gemini-1.5-flash`
  *
- * Local providers (ollama, lmstudio, custom) have no canonical "cheap"
- * tier; the selector falls back to `truncate` for them.
+ * Local providers (ollama, lmstudio, unsloth, custom) have no canonical
+ * "cheap" tier; the selector falls back to `truncate` for them.
  */
 export const CHEAP_MODEL_BY_BACKEND: Readonly<Record<Backend, string | null>> =
   {
@@ -68,6 +68,7 @@ export const CHEAP_MODEL_BY_BACKEND: Readonly<Record<Backend, string | null>> =
     google: 'gemini-1.5-flash',
     ollama: null,
     lmstudio: null,
+    unsloth: null,
     custom: null,
   };
 

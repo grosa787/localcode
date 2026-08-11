@@ -25,6 +25,7 @@ export type VisionBackend =
   | 'anthropic'
   | 'openrouter'
   | 'google'
+  | 'unsloth'
   | 'custom';
 
 /**
@@ -99,6 +100,11 @@ export function supportsVision(
 
     case 'ollama':
     case 'lmstudio':
+    // Unsloth Studio's server accepts `image_url` parts, but whether the
+    // loaded GGUF/MLX weights do is a per-model question with no naming
+    // convention — same situation as Ollama/LM Studio, so the generic
+    // vision-hint substrings above are the only signal.
+    case 'unsloth':
     case 'custom':
     default:
       return false;

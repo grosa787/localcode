@@ -22,6 +22,9 @@
  *     `qwen/qwen2-vl*`, `qwen/qwen-vl*`, `mistralai/pixtral*`. Anything
  *     with the literal substrings `vision`, `vl`, `pixtral`, `image`,
  *     `multimodal` in the slug is treated as vision-capable.
+ *   - Unsloth Studio: the server accepts `image_url` parts, but the
+ *     loaded GGUF may be text-only and its id says nothing about that,
+ *     so the same name heuristic applies as for the other local ones.
  *   - Ollama / LM Studio / Custom: heuristic — any model with `vision`,
  *     `vl`, `llava`, `pixtral`, `bakllava`, `moondream`, `minicpm-v` in
  *     the name. Includes the popular Llama-3.2 vision family, Qwen-VL,
@@ -122,6 +125,15 @@ export function supportsVision(
       // above; this branch stays as documentation.
       return false;
     }
+
+    case 'unsloth':
+      // The TRANSPORT is not the constraint here: Unsloth Studio accepts
+      // OpenAI `image_url` parts (http(s) URLs and base64 data URIs).
+      // The uncertainty is model-side — whichever GGUF the user loaded
+      // may be text-only, and ids like `unsloth/<repo>-GGUF` carry no
+      // reliable capability signal. Same posture as the other local
+      // backends: trust the generic vision-hint check above, else warn.
+      return false;
 
     case 'ollama':
     case 'lmstudio':

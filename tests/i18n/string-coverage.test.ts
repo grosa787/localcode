@@ -60,6 +60,7 @@ const REQUIRED_KEYS = [
   'onboarding.cantReach',
   'onboarding.noModelsHint.ollama',
   'onboarding.noModelsHint.lmstudio',
+  'onboarding.noModelsHint.unsloth',
   'onboarding.noModelsHint.custom',
   'onboarding.noModelsHint.cloud',
   'onboarding.serverReachableNoModels',
@@ -144,6 +145,7 @@ const REQUIRED_KEYS = [
   'provider.notes.openrouterRu',
   'provider.notes.cloudKeys',
   'provider.warn.openrouter',
+  'provider.warn.unsloth',
   'provider.error.customUrlRequired',
   'provider.error.cloudUrlEmpty',
   'provider.error.urlScheme',
@@ -154,6 +156,7 @@ const REQUIRED_KEYS = [
   'provider.editingUrl',
   'provider.editingKey',
   'provider.footer',
+  'provider.cmd.unslothDisableTools',
   // /settings
   'settings.title',
   'settings.source.globalOnly',

@@ -184,6 +184,8 @@ function backendHint(backend: Backend): string {
     case 'openrouter':
     case 'google':
       return 'Cloud provider: per-model context windows are fixed server-side; /ctxsize here is advisory only for message-history budgeting.';
+    case 'unsloth':
+      return 'Unsloth Studio: context length is fixed by -c/--ctx-size when the server is launched; /ctxsize here is advisory only for message-history budgeting.';
     case 'custom':
       return 'Custom endpoint: /ctxsize here is advisory only — your endpoint controls its own context window.';
     default: {
@@ -207,6 +209,9 @@ function keepAliveHint(backend: Backend): string {
   }
   if (backend === 'lmstudio') {
     return 'LM Studio: keep-alive is managed by LM Studio itself; this value is advisory.';
+  }
+  if (backend === 'unsloth') {
+    return 'Unsloth Studio: the loaded model stays resident for the lifetime of `unsloth run`; this value is advisory.';
   }
   return 'Cloud / custom backend: keep-alive is managed server-side; this value is local-only.';
 }

@@ -120,6 +120,49 @@ describe('/provider <type> — switch backend', () => {
     expect(reread.backend.baseUrl).toBe('http://10.0.0.5:11434');
   });
 
+  test('unsloth switches type and URL to Unsloth Studio defaults', async () => {
+    const cmd = createProviderCommand({ configManager: cfgMgr });
+    await cmd.execute('unsloth', buildCtx().ctx);
+
+    const reread = cfgMgr.read();
+    expect(reread.backend.type).toBe('unsloth');
+    expect(reread.backend.baseUrl).toBe('http://localhost:8888/v1');
+  });
+
+  test('unsloth switch warns about the mandatory --disable-tools flag', async () => {
+    // Without --disable-tools, Unsloth's own server-side tool loop
+    // intercepts tool calls and LocalCode silently does nothing — no
+    // error, no 4xx. The switch is the moment the user is looking, so
+    // the warning must be printed here. The assertion targets the flag
+    // itself, which is identical in every locale.
+    const cmd = createProviderCommand({ configManager: cfgMgr });
+    const { ctx, output } = buildCtx();
+    await cmd.execute('unsloth', ctx);
+    expect(output.join('\n')).toContain('--disable-tools');
+  });
+
+  test('switching to a non-unsloth backend does NOT print the warning', async () => {
+    const cmd = createProviderCommand({ configManager: cfgMgr });
+    const { ctx, output } = buildCtx();
+    await cmd.execute('lmstudio', ctx);
+    expect(output.join('\n')).not.toContain('--disable-tools');
+  });
+
+  test('switching unsloth → unsloth preserves a hand-set URL (e.g. port 8000)', async () => {
+    // One Unsloth doc page documents port 8000 rather than 8888, so a
+    // user may legitimately be on a non-default port. Re-running the
+    // switch must not stomp it back to the default.
+    cfgMgr.update({
+      backend: { type: 'unsloth', baseUrl: 'http://localhost:8000/v1' },
+    });
+    const cmd = createProviderCommand({ configManager: cfgMgr });
+    await cmd.execute('unsloth', buildCtx().ctx);
+
+    const reread = cfgMgr.read();
+    expect(reread.backend.type).toBe('unsloth');
+    expect(reread.backend.baseUrl).toBe('http://localhost:8000/v1');
+  });
+
   test('after switching, /provider show reflects the new backend', async () => {
     const cmd = createProviderCommand({ configManager: cfgMgr });
     await cmd.execute('lmstudio', buildCtx().ctx);
@@ -205,5 +248,12 @@ describe('/provider — command metadata', () => {
     expect(cmd.description.length).toBeGreaterThan(0);
     expect(typeof cmd.usage).toBe('string');
     expect(cmd.usage!.length).toBeGreaterThan(0);
+  });
+
+  test('usage string advertises the unsloth verb', () => {
+    // Discoverability: `/provider` is where a user goes looking for the
+    // provider list, so an unlisted verb is an invisible feature.
+    const cmd = createProviderCommand({ configManager: cfgMgr });
+    expect(cmd.usage).toContain('unsloth');
   });
 });

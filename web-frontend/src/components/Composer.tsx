@@ -239,6 +239,9 @@ export function Composer(props: ComposerProps): JSX.Element {
   const dragCounterRef = useRef(0);
 
   const slashCommands = useStore((s) => s.slashCommands);
+  // Handed to the slash executor so its instruction strings (e.g. the
+  // Unsloth --disable-tools note) render in the user's language.
+  const locale = useStore((s) => s.locale);
   const openSlashCommands = useStore((s) => s.openSlashCommands);
   // PRESENCE-SECTION
   const peersBySession = useStore((s) => s.peers);
@@ -743,6 +746,7 @@ export function Composer(props: ComposerProps): JSX.Element {
           backend: activeBackend,
           model: currentModel,
           commands: slashCommands,
+          locale,
         };
         const result = await executeSlashCommand(fullLine, ctx);
         if (result.kind === 'inline-system-message' && result.text !== undefined) {
@@ -857,6 +861,7 @@ export function Composer(props: ComposerProps): JSX.Element {
     activeBackend,
     currentModel,
     slashCommands,
+    locale,
     clients.rest,
     // /SLASH-EXEC-SECTION
   ]);
